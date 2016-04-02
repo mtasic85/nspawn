@@ -13,19 +13,32 @@ Arch Linux post-install requires:
 # pacman-key --init
 # pacman-key --populate archlinux
 # pacman-key --refresh-keys
+# pacman -Syyuu
+```
+
+## systemd-nspawn
+
+```
+# pacman -Sy arch-install-scripts
 ```
 
 ## SSH
 
 You will need to know all servers addresses, and they all need to have SSH server running on each remote server.
 
-## Users
-
-Create user 'dcloud'.
+```
+# pacman -S opensshd
+# systemctl enable sshd
+# systemctl start sshd
+```
 
 ## sudo
 
 Make sure user 'dcloud' does not require password for sudo.
+
+## Users
+
+Create user 'dcloud'.
 
 
 # Local machine
