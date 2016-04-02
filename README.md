@@ -8,7 +8,24 @@ Communication between local machine and cluster of servers (also known as nodes)
 
 # Remote servers
 
-You will need to know all servers addresses, and they all need to have SSH server running on them.
+Arch Linux post-install requires:
+```
+# pacman-key --init
+# pacman-key --populate archlinux
+# pacman-key --refresh-keys
+```
+
+## SSH
+
+You will need to know all servers addresses, and they all need to have SSH server running on each remote server.
+
+## Users
+
+Create user 'dcloud'.
+
+## sudo
+
+Make sure user 'dcloud' does not require password for sudo.
 
 
 # Local machine
