@@ -61,6 +61,8 @@ def machine_add(address):
     with open('machines.yaml', 'w') as f:
         yaml.safe_dump(machines, f)
 
+    print('{}'.format(machine_id))
+
 
 def machine_remove(machine_id, address):
     if os.path.exists('machines.yaml'):
@@ -73,6 +75,13 @@ def machine_remove(machine_id, address):
         machines = {}
 
     if machine_id:
+        # convert short ID to long ID
+        if len(machine_id) == 12:
+            for m_id in machines:
+                if m_id[-12:] == machine_id:
+                    machine_id = m_id
+                    break
+
         if machine_id not in machines:
             print('Machine with id {} does not exists'.format(machine_id))
             sys.exit(1)
@@ -112,29 +121,34 @@ def container_list():
     else:
         machines = {}
 
-    print('{a: <12} {b: <12} {c: <15} {d: <18} {e: <19}'.format(
+    print('{a: <12} {b: <12} {c: <15} {d: <16} {e: <19} {f: <1}'.format(
         a='Container ID',
         b='Machine ID',
         c='Address',
         d='Name',
         e='Ports',
+        f='S', # Status
     ))
 
-    print('{a:-<12} {b:-<12} {c:-<15} {d:-<18} {e:-<19}'.format(a='', b='', c='', d='', e=''))
+    print('{a:-<12} {b:-<12} {c:-<15} {d:-<16} {e:-<19} {f:-<1}'.format(
+        a='', b='', c='', d='', e='', f=''))
 
     for container_id, container in containers.items():
         machine_id = container['machine_id']
         machine = machines[machine_id]
+        status = 'x'
 
-        print('{a: <12} {b: <12} {c: <15} {d: <18} {e: <19}'.format(
+        print('{a: <12} {b: <12} {c: <15} {d: <16} {e: <19} {f: <1}'.format(
             a=container_id[-12:],
             b=machine_id[-12:],
             c=machine['address'],
             d=container['name'][:18],
             e=container['ports'][:19],
+            f=status,
         ))
 
-    print('{a:-<12} {b:-<12} {c:-<15} {d:-<18} {e:-<19}'.format(a='', b='', c='', d='', e=''))
+    print('{a:-<12} {b:-<12} {c:-<15} {d:-<16} {e:-<19} {f:-<1}'.format(
+        a='', b='', c='', d='', e='', f=''))
 
 
 def container_add(machine_id, address, name, ports, distro, image_id, image):
@@ -192,6 +206,8 @@ def container_add(machine_id, address, name, ports, distro, image_id, image):
     with open('containers.yaml', 'w') as f:
         yaml.safe_dump(containers, f)
 
+    print('{}'.format(container_id))
+
 
 def container_remove(container_id):
     # load containers
@@ -203,6 +219,13 @@ def container_remove(container_id):
                 containers = {}
     else:
         containers = {}
+
+    # convert short ID to long ID
+    if len(container_id) == 12:
+        for c_id in containers:
+            if c_id[-12:] == container_id:
+                container_id = c_id
+                break
 
     if container_id not in containers:
         print('Unknown container id {}'.format(container_id))
