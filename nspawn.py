@@ -5,9 +5,28 @@ import hashlib
 import argparse
 
 import yaml
+import paramiko
+
+
+def load_remote_config(remote_address, address, filename='nspawn.yaml'):
+    client = SSHClient()
+    client.load_system_host_keys()
+    client.connect(address)
+    cmd = 'cat {}'.format(filename)
+    stdin, stdout, stderr = client.exec_command(cmd)
+    return stdout
+
+
+def save_remote_config(remote_address, address, filename='nspawn.yaml'):
+    pass
+
+
+def merge_remote_configs(remote_address, configs):
+    pass
 
 
 def machine_list():
+    '''
     if os.path.exists('machines.yaml'):
         with open('machines.yaml', 'r') as f:
             machines = yaml.load(f)
@@ -27,8 +46,12 @@ def machine_list():
         ))
 
     print('{a:-<12} {b:-<67}'.format(a='', b=''))
+    '''
+
+
 
 def machine_add(address):
+    '''
     # load machines
     if os.path.exists('machines.yaml'):
         with open('machines.yaml', 'r') as f:
@@ -62,9 +85,11 @@ def machine_add(address):
         yaml.safe_dump(machines, f)
 
     print('{}'.format(machine_id))
+    '''
 
 
 def machine_remove(machine_id, address):
+    '''
     if os.path.exists('machines.yaml'):
         with open('machines.yaml', 'r') as f:
             machines = yaml.load(f)
@@ -98,9 +123,11 @@ def machine_remove(machine_id, address):
 
     with open('machines.yaml', 'w') as f:
         yaml.safe_dump(machines, f)
+    '''
 
 
 def container_list():
+    '''
     # load containers
     if os.path.exists('containers.yaml'):
         with open('containers.yaml', 'r') as f:
@@ -149,9 +176,11 @@ def container_list():
 
     print('{a:-<12} {b:-<12} {c:-<15} {d:-<16} {e:-<19} {f:-<1}'.format(
         a='', b='', c='', d='', e='', f=''))
+    '''
 
 
 def container_add(machine_id, address, name, ports, distro, image_id, image):
+    '''
     # load containers
     if os.path.exists('containers.yaml'):
         with open('containers.yaml', 'r') as f:
@@ -207,9 +236,11 @@ def container_add(machine_id, address, name, ports, distro, image_id, image):
         yaml.safe_dump(containers, f)
 
     print('{}'.format(container_id))
+    '''
 
 
 def container_remove(container_id):
+    '''
     # load containers
     if os.path.exists('containers.yaml'):
         with open('containers.yaml', 'r') as f:
@@ -235,6 +266,7 @@ def container_remove(container_id):
 
     with open('containers.yaml', 'w') as f:
         yaml.safe_dump(containers, f)
+    '''
 
 
 def container_start(container_id):
@@ -252,6 +284,8 @@ def container_restart(container_id):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='systemd-nspawn deployment')
     parser_subparsers = parser.add_subparsers(dest='subparser', metavar='main')
+    parser.add_argument('--remote-address', '-r', help='Remote address')
+    # parser.add_argument('--cluster-id', '-C', help='Cluster ID')
     
     # machine
     machine_parser = parser_subparsers.add_parser('machine')
@@ -259,7 +293,7 @@ if __name__ == '__main__':
     
     # machine list
     machine_list_parser = machine_subparsers.add_parser('list', help='List machines')
-    
+
     # machine add
     machine_add_parser = machine_subparsers.add_parser('add', help='Add machine')
     machine_add_parser.add_argument('--id', '-I', help='Machine ID')
@@ -270,6 +304,20 @@ if __name__ == '__main__':
     machine_remove_parser.add_argument('--id', '-I', help='Machine ID')
     machine_remove_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
     
+    # cluster
+    cluster_parser = parser_subparsers.add_parser('cluster')
+    cluster_subparsers = cluster_parser.add_subparsers(dest='cluster_subparser', metavar='cluster')
+
+    # cluster add
+    cluster_add_parser = cluster_subparsers.add_parser('add', help='Add cluster')
+    cluster_add_parser.add_argument('--id', '-I', help='Cluster ID')
+    cluster_add_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+
+    # cluster remove
+    cluster_remove_parser = cluster_subparsers.add_parser('cluster', help='Remove cluster')
+    cluster_remove_parser.add_argument('--id', '-I', help='Cluster ID')
+    cluster_remove_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+
     # container 
     container_parser = parser_subparsers.add_parser('container')
     container_subparsers = container_parser.add_subparsers(dest='container_subparser', metavar='container')
