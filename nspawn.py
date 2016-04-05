@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+import shlex
 import random
 import hashlib
 import argparse
@@ -8,64 +10,120 @@ import yaml
 import paramiko
 
 
-def load_remote_config(remote_address, address, filename='nspawn.yaml'):
-    client = SSHClient()
-    client.load_system_host_keys()
-    client.connect(address)
+def load_remote_config(remote_uri, filename='nspawn.yaml'):
+    remote_username, remote_address = remote_uri.split('@')
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(remote_address, username=remote_username)
     cmd = 'cat {}'.format(filename)
     stdin, stdout, stderr = client.exec_command(cmd)
-    return stdout
+    config = {} if stderr.read() else yaml.load(stdout)
+    return config
 
 
-def save_remote_config(remote_address, address, filename='nspawn.yaml'):
-    pass
+def save_remote_config(remote_uri, config, filename='nspawn.yaml'):
+    remote_username, remote_address = remote_uri.split('@')
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(remote_address, username=remote_username)
+    _config = shlex.quote(yaml.dump(config))
+    cmd = 'echo {} > {}'.format(_config, filename)
+    stdin, stdout, stderr = client.exec_command(cmd)
+
+    if stderr.read():
+        raise IOError
 
 
-def merge_remote_configs(remote_address, configs):
-    pass
+def merge_remote_configs(configs):
+    merged_machines = {}
+    merged_projects = {}
+    merged_containers = {}
+
+    for config in configs:
+        # merge machines
+        machines = config.get('machines', {})
+        merged_machines.update(machines)
+
+        # merge projects
+        projects = config.get('projects', {})
+        merged_projects.update(projects)
+
+        # merge containers
+        containers = config.get('containers', {})
+        merged_containers.update(containers)
+
+    config = {
+        'machines': merged_machines,
+        'projects': merged_projects,
+        'containers': merged_containers,
+    }
+
+    return config
 
 
-def machine_list():
-    '''
-    if os.path.exists('machines.yaml'):
-        with open('machines.yaml', 'r') as f:
-            machines = yaml.load(f)
-            
-            if not machines:
-                machines = {}
-    else:
-        machines = {}
-
-    print('{a: <12} {b: <67}'.format(a='Machine ID', b='Address'))
-    print('{a:-<12} {b:-<67}'.format(a='', b=''))
+def load_consensus_config(remote_uri, filename='nspawn.yaml'):
+    remote_username, remote_address = remote_uri.split('@')
+    configs = []
+    config = load_remote_config(remote_uri)
+    machines = config.get('machines', {})
 
     for machine_id, machine in machines.items():
+        machine_uri = '{}@{}'.format(machine['user'], machine['address'])
+        config = load_remote_config(machine_uri)
+        configs.append(config)
+
+    config = merge_remote_configs(configs)
+    return config
+
+
+def save_consensus_config(config, filename='nspawn.yaml'):
+    machines = config.get('machines', {})
+    
+    for machine_id, machine in machines.items():
+        try:
+            machine_uri = '{}@{}'.format(machine['user'], machine['address'])
+            save_remote_config(machine_uri, config)
+        except Exception as e:
+            err = 'Error saving config on {} with machine id {}.'.format(
+                machine['address'],
+                machine_id,
+            )
+
+            print(err, file=sys.stderr)
+
+
+#
+# machine
+#
+def machine_list(remote_uri):
+    remote_config = load_consensus_config(remote_uri)
+    machine_items = remote_config.get('machines', {}).items()
+    machine_items = list(machine_items)
+    machine_items = sorted(machine_items, key=lambda n: n[1]['address'])
+    print('{a: <12} {b: <67}'.format(a='MACHINE_ID', b='ADDRESS'))
+
+    for machine_id, machine in machine_items:
         print('{a: <12} {b: <67}'.format(
             a=machine['id'][-12:],
-            b=machine['address'],
+            b='{}@{}'.format(machine['user'], machine['address']),
         ))
 
-    print('{a:-<12} {b:-<67}'.format(a='', b=''))
-    '''
 
-
-
-def machine_add(address):
-    '''
-    # load machines
-    if os.path.exists('machines.yaml'):
-        with open('machines.yaml', 'r') as f:
-            machines = yaml.load(f)
-            
-            if not machines:
-                machines = {}
-    else:
-        machines = {}
+def machine_add(remote_uri, uri):
+    remote_username, remote_address = remote_uri.split('@')
+    username, address = uri.split('@')
+    config = load_consensus_config(remote_uri)
+    machines = config['machines']
 
     # check if address already exists
     for machine_id, machine in machines.items():
         if address == machine['address']:
-            print('Machine with address {} already exists'.format(address))
+            msg = 'Machine with address {} already exists'.format(address)
+            print(msg, file=sys.stderr)
             sys.exit(1)
 
     # generate random ID
@@ -75,144 +133,153 @@ def machine_add(address):
 
     machine = {
         'id': machine_id,
+        'user': username,
         'address': address,
     }
 
     machines[machine_id] = machine
-
-    # save machines
-    with open('machines.yaml', 'w') as f:
-        yaml.safe_dump(machines, f)
-
+    save_consensus_config(config)
     print('{}'.format(machine_id))
-    '''
 
 
-def machine_remove(machine_id, address):
-    '''
-    if os.path.exists('machines.yaml'):
-        with open('machines.yaml', 'r') as f:
-            machines = yaml.load(f)
-            
-            if not machines:
-                machines = {}
-    else:
-        machines = {}
+def machine_remove(remote_uri, machine_id):
+    remote_username, remote_address = remote_uri.split('@')
+    username, address = uri.split('@')
+    config = load_consensus_config(remote_uri)
+    machines = config['machines']
 
-    if machine_id:
-        # convert short ID to long ID
-        if len(machine_id) == 12:
-            for m_id in machines:
-                if m_id[-12:] == machine_id:
-                    machine_id = m_id
-                    break
-
-        if machine_id not in machines:
-            print('Machine with id {} does not exists'.format(machine_id))
-            sys.exit(1)
-
-        del machines[machine_id]
-    else:
-        for machine_id, machine in list(machines.items()):
-            if machine['address'] == address:
-                del machines[machine_id]
+    # convert short ID to long ID
+    if len(machine_id) == 12:
+        for m_id in machines:
+            if m_id[-12:] == machine_id:
+                machine_id = m_id
                 break
-        else:
-            print('Machine with address {} does not exists'.format(address))
-            sys.exit(1)
 
-    with open('machines.yaml', 'w') as f:
-        yaml.safe_dump(machines, f)
-    '''
+    if machine_id not in machines:
+        msg = 'Machine with id {} does not exists'.format(machine_id)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    del machines[machine_id]
+    save_consensus_config(config)
+    print('{}'.format(machine_id))
 
 
-def container_list():
-    '''
-    # load containers
-    if os.path.exists('containers.yaml'):
-        with open('containers.yaml', 'r') as f:
-            containers = yaml.load(f)
-            
-            if not containers:
-                containers = {}
-    else:
-        containers = {}
+#
+# project
+#
+def project_list(remote_uri):
+    remote_config = load_consensus_config(remote_uri)
+    project_items = remote_config.get('projects', {}).items()
+    project_items = list(project_items)
+    project_items = sorted(project_items, key=lambda n: n[1]['name'])
+    print('{a: <12} {b: <67}'.format(a='PROJECT_ID', b='NAME'))
 
-    # load machines
-    if os.path.exists('machines.yaml'):
-        with open('machines.yaml', 'r') as f:
-            machines = yaml.load(f)
-            
-            if not machines:
-                machines = {}
-    else:
-        machines = {}
-
-    print('{a: <12} {b: <12} {c: <15} {d: <16} {e: <19} {f: <1}'.format(
-        a='Container ID',
-        b='Machine ID',
-        c='Address',
-        d='Name',
-        e='Ports',
-        f='S', # Status
-    ))
-
-    print('{a:-<12} {b:-<12} {c:-<15} {d:-<16} {e:-<19} {f:-<1}'.format(
-        a='', b='', c='', d='', e='', f=''))
-
-    for container_id, container in containers.items():
-        machine_id = container['machine_id']
-        machine = machines[machine_id]
-        status = 'x'
-
-        print('{a: <12} {b: <12} {c: <15} {d: <16} {e: <19} {f: <1}'.format(
-            a=container_id[-12:],
-            b=machine_id[-12:],
-            c=machine['address'],
-            d=container['name'][:18],
-            e=container['ports'][:19],
-            f=status,
+    for project_id, project in project_items:
+        print('{a: <12} {b: <67}'.format(
+            a=project['id'][-12:],
+            b='{}'.format(project['name']),
         ))
 
-    print('{a:-<12} {b:-<12} {c:-<15} {d:-<16} {e:-<19} {f:-<1}'.format(
-        a='', b='', c='', d='', e='', f=''))
-    '''
 
+def project_add(remote_uri, project_name):
+    remote_username, remote_address = remote_uri.split('@')
+    config = load_consensus_config(remote_uri)
+    projects = config['projects']
 
-def container_add(machine_id, address, name, ports, distro, image_id, image):
-    '''
-    # load containers
-    if os.path.exists('containers.yaml'):
-        with open('containers.yaml', 'r') as f:
-            containers = yaml.load(f)
-            
-            if not containers:
-                containers = {}
-    else:
-        containers = {}
-
-    # load machines
-    if os.path.exists('machines.yaml'):
-        with open('machines.yaml', 'r') as f:
-            machines = yaml.load(f)
-            
-            if not machines:
-                machines = {}
-    else:
-        machines = {}
-
-    if machine_id:
-        if machine_id not in machines:
-            print('Unknown machine id {}'.format(machine_id))
+    # check if project name already exists
+    for project_id, project in projects.items():
+        if project_name == project['name']:
+            msg = 'Project with name {} already exists'.format(project_name)
+            print(msg, file=sys.stderr)
             sys.exit(1)
-    else:
-        for machine_id_, machine in machines.items():
-            if machine['address'] == address:
-                machine_id = machine_id_
+
+    # generate random ID
+    m = hashlib.sha1()
+    m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
+    project_id = m.hexdigest()
+
+    project = {
+        'id': project_id,
+        'name': project_name,
+    }
+
+    projects[project_id] = project
+    save_consensus_config(config)
+    print('{}'.format(project_id))
+
+
+def project_remove(remote_uri, project_id):
+    remote_username, remote_address = remote_uri.split('@')
+    username, address = uri.split('@')
+    config = load_consensus_config(remote_uri)
+    projects = config['projects']
+
+    # convert short ID to long ID
+    if len(project_id) == 12:
+        for p_id in projects:
+            if p_id[-12:] == project_id:
+                project_id = p_id
                 break
-        else:
-            print('Unknown machine address {}'.format(address))
-            sys.exit(1)
+
+    if project_id not in projects:
+        msg = 'Project with id {} does not exists'.format(project_id)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
+
+    del projects[project_id]
+    save_consensus_config(config)
+    print('{}'.format(project_id))
+
+
+#
+# container
+#
+def container_list(remote_uri, project_id):
+    remote_config = load_consensus_config(remote_uri)
+    container_items = remote_config.get('containers', {}).items()
+    container_items = [n for n in container_items if n[1]['project_id'].endswith(project_id)]
+    container_items = sorted(container_items, key=lambda n: n[1]['name'])
+    
+    print('{a: <12} {b: <10} {c: <15} {d: <33} {e: <6}'.format(
+        a='CONTAINER_ID',
+        b='NAME',
+        c='ADDRESS',
+        d='PORTS',
+        e='STATUS',
+    ))
+
+    for container_id, container in container_items:
+        status = 'x'
+
+        print('{a: <12} {b: <10} {c: <15} {d: <33} {e: <6}'.format(
+            a=container_id[-12:],
+            b=container['name'][:10],
+            c=container['address'],
+            d=container['ports'][:33],
+            e=status,
+        ))
+
+
+def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, image):
+    remote_username, remote_address = remote_uri.split('@')
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+
+    # check if project id exists
+    projects = config['projects']
+
+    # convert short ID to long ID
+    if len(project_id) == 12:
+        for p_id in projects:
+            if p_id[-12:] == project_id:
+                project_id = p_id
+                break
+    
+    if project_id not in projects:
+        msg = 'Project with id {} does not exists'.format(project_id)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
 
     # generate random ID
     m = hashlib.sha1()
@@ -221,8 +288,8 @@ def container_add(machine_id, address, name, ports, distro, image_id, image):
 
     container = {
         'id': container_id,
-        'machine_id': machine_id,
-        'address': address,
+        'project_id': project_id,
+        'address': remote_address,
         'name': name,
         'ports': ports,
         'distro': distro,
@@ -231,25 +298,29 @@ def container_add(machine_id, address, name, ports, distro, image_id, image):
     }
 
     containers[container_id] = container
-
-    with open('containers.yaml', 'w') as f:
-        yaml.safe_dump(containers, f)
-
+    save_consensus_config(config)
     print('{}'.format(container_id))
-    '''
 
 
-def container_remove(container_id):
-    '''
-    # load containers
-    if os.path.exists('containers.yaml'):
-        with open('containers.yaml', 'r') as f:
-            containers = yaml.load(f)
-            
-            if not containers:
-                containers = {}
-    else:
-        containers = {}
+def container_remove(remote_uri, project_id, container_id):
+    remote_username, remote_address = remote_uri.split('@')
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+
+    # check if project id exists
+    projects = config['projects']
+
+    # convert short ID to long ID
+    if len(project_id) == 12:
+        for p_id in projects:
+            if p_id[-12:] == project_id:
+                project_id = p_id
+                break
+
+    if project_id not in projects:
+        msg = 'Project with id {} does not exists'.format(project_id)
+        print(msg, file=sys.stderr)
+        sys.exit(1)
 
     # convert short ID to long ID
     if len(container_id) == 12:
@@ -259,25 +330,28 @@ def container_remove(container_id):
                 break
 
     if container_id not in containers:
-        print('Unknown container id {}'.format(container_id))
+        msg = 'Container with id {} does not exists'.format(container_id)
+        print(msg, file=sys.stderr)
         sys.exit(1)
 
     del containers[container_id]
-
-    with open('containers.yaml', 'w') as f:
-        yaml.safe_dump(containers, f)
-    '''
+    save_consensus_config(config)
+    print('{}'.format(container_id))
 
 
-def container_start(container_id):
+def container_start(remote_uri, project_id, container_id):
     pass
 
 
-def container_stop(container_id):
+def container_stop(remote_uri, project_id, container_id):
     pass
 
 
-def container_restart(container_id):
+def container_restart(remote_uri, project_id, container_id):
+    pass
+
+
+def container_migrate(remote_uri, project_id, container_id):
     pass
 
 
@@ -285,7 +359,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='systemd-nspawn deployment')
     parser_subparsers = parser.add_subparsers(dest='subparser', metavar='main')
     parser.add_argument('--remote-address', '-r', help='Remote address')
-    # parser.add_argument('--cluster-id', '-C', help='Cluster ID')
+    # parser.add_argument('--project-id', '-C', help='Project ID')
     
     # machine
     machine_parser = parser_subparsers.add_parser('machine')
@@ -297,38 +371,39 @@ if __name__ == '__main__':
     # machine add
     machine_add_parser = machine_subparsers.add_parser('add', help='Add machine')
     machine_add_parser.add_argument('--id', '-I', help='Machine ID')
-    machine_add_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+    machine_add_parser.add_argument('--address', '-a', help='[USER="root"@]HOST[:PORT=22]')
 
     # machine remove
     machine_remove_parser = machine_subparsers.add_parser('remove', help='Remove machine')
     machine_remove_parser.add_argument('--id', '-I', help='Machine ID')
-    machine_remove_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
     
-    # cluster
-    cluster_parser = parser_subparsers.add_parser('cluster')
-    cluster_subparsers = cluster_parser.add_subparsers(dest='cluster_subparser', metavar='cluster')
+    # project
+    project_parser = parser_subparsers.add_parser('project')
+    project_subparsers = project_parser.add_subparsers(dest='project_subparser', metavar='project')
 
-    # cluster add
-    cluster_add_parser = cluster_subparsers.add_parser('add', help='Add cluster')
-    cluster_add_parser.add_argument('--id', '-I', help='Cluster ID')
-    cluster_add_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+    # project list
+    project_list_parser = project_subparsers.add_parser('list', help='List projects')
 
-    # cluster remove
-    cluster_remove_parser = cluster_subparsers.add_parser('cluster', help='Remove cluster')
-    cluster_remove_parser.add_argument('--id', '-I', help='Cluster ID')
-    cluster_remove_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+    # project add
+    project_add_parser = project_subparsers.add_parser('add', help='Add project')
+    project_add_parser.add_argument('--id', '-I', default=None, help='Project ID')
+    project_add_parser.add_argument('--name', '-n', help='Name')
+
+    # project remove
+    project_remove_parser = project_subparsers.add_parser('project', help='Remove project')
+    project_remove_parser.add_argument('--id', '-I', help='Project ID')
 
     # container 
     container_parser = parser_subparsers.add_parser('container')
     container_subparsers = container_parser.add_subparsers(dest='container_subparser', metavar='container')
+    container_parser.add_argument('--project-id', '-P', help='Project ID')
     
     # container list
     container_list_parser = container_subparsers.add_parser('list', help='List of containers at remote host')
 
     # container add
     container_add_parser = container_subparsers.add_parser('add', help='Add container')
-    container_add_parser.add_argument('--machine-id', '-M', help='Machine ID')
-    container_add_parser.add_argument('--address', '-a', help='HOST:PORT, where port is 22 by default')
+    container_add_parser.add_argument('--address', '-a', default=None, help='[USER="root"@]HOST[:PORT=22]')
     container_add_parser.add_argument('--name', '-n', help='Human readable name of container')
     container_add_parser.add_argument('--ports', '-p', help='MACHINE_PORT:CONTAINER_PORT[,M_PORT:C_PORT,...]')
     container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch, debian, fedora')
@@ -341,25 +416,34 @@ if __name__ == '__main__':
 
     # parse args
     args = parser.parse_args()
-    print(args)
+    # print(args)
 
     if args.subparser == 'machine':
         if args.machine_subparser == 'list':
-            machine_list()
+            machine_list(args.remote_address)
         elif args.machine_subparser == 'add':
-            machine_add(args.address)
+            machine_add(args.remote_address, args.address)
         elif args.machine_subparser == 'remove':
-            machine_remove(args.id, args.address)
+            machine_remove(args.remote_address, args.id)
+    elif args.subparser == 'project':
+        if args.project_subparser == 'list':
+            project_list(args.remote_address)
+        elif args.project_subparser == 'add':
+            project_add(args.remote_address, args.name)
+        elif args.project_subparser == 'remove':
+            project_remove(args.remote_address, args.id)
     elif args.subparser == 'container':
         if args.container_subparser == 'list':
-            container_list()
+            container_list(args.remote_address, args.project_id)
         elif args.container_subparser == 'add':
-            container_add(args.machine_id, args.address, args.name, args.ports, args.distro, args.image_id, args.image)
+            container_add(args.remote_address, args.project_id, args.address, args.name, args.ports, args.distro, args.image_id, args.image)
         elif args.container_subparser == 'remove':
-            container_remove(args.id)
+            container_remove(args.remote_address, args.project_id, args.id)
         elif args.container_subparser == 'start':
-            container_start(args.id)
+            container_start(args.remote_address, args.project_id, args.id)
         elif args.container_subparser == 'stop':
-            container_stop(args.id)
+            container_stop(args.remote_address, args.project_id, args.id)
         elif args.container_subparser == 'restart':
-            container_restart(args.id)
+            container_restart(args.remote_address, args.project_id, args.id)
+        elif args.container_subparser == 'migrate':
+            container_migrate(args.remote_address, args.project_id, args.id)
