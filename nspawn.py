@@ -34,8 +34,10 @@ def save_remote_config(remote_uri, config, filename='nspawn.yaml'):
     cmd = 'echo {} > {}'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(cmd)
 
-    if stderr.read():
-        raise IOError
+    err = stderr.read()
+    
+    if err:
+        raise IOError(err)
 
 
 def merge_remote_configs(configs):
@@ -281,6 +283,23 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
         print(msg, file=sys.stderr)
         sys.exit(1)
 
+    # find suitable machine where to host container
+    machines = config['machines']
+    b = False
+
+    for m_id, m in machines.items():
+        for c_id, c in containers.items():
+            if c['name'] != name:
+                machine_id = m_id
+                b = True
+                break
+
+        if b:
+            break
+    else:
+        m_id, m = list(machines.items())[0]
+        machine_id = m_id
+
     # generate random ID
     m = hashlib.sha1()
     m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
@@ -289,6 +308,7 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
     container = {
         'id': container_id,
         'project_id': project_id,
+        'machine_id': machine_id,
         'address': remote_address,
         'name': name,
         'ports': ports,
