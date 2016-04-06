@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import shlex
 import random
 import hashlib
@@ -10,31 +11,132 @@ import yaml
 import paramiko
 
 
-def load_remote_config(remote_uri, filename='nspawn.yaml'):
-    remote_username, remote_address = remote_uri.split('@')
+#
+# ssh
+#
+def create_container(uri, container, verbose=False):
+    username, address = uri.split('@')
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
     client.load_host_keys(known_hosts_path)
-    client.connect(remote_address, username=remote_username)
-    cmd = 'cat {}'.format(filename)
-    stdin, stdout, stderr = client.exec_command(cmd)
-    config = {} if stderr.read() else yaml.load(stdout)
+    client.connect(address, username=username)
+
+    # create machine dir
+    command = 'sudo mkdir -p "/var/lib/machines/{id}"'.format(**container)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    err = stderr.read()
+    stdin.close()
+    
+    if err:
+        raise IOError(err)
+
+    # wait until other pacman instances finish install
+    while True:
+        command = 'ls /var/lib/pacman/db.lck'
+        print('{!r}'.format(command))
+        stdin, stdout, stderr = client.exec_command(command)
+        out = stdout.read()
+        stdin.close()
+
+        if out != '/var/lib/pacman/db.lck':
+            break
+
+        print('Machine already using pacman, waiting 5 seconds...')
+        time.sleep(5.0)
+
+    # boostrap container
+    command = 'sudo pacstrap -c -d "/var/lib/machines/{id}" base vim openssh'.format(**container)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+    
+    if verbose:
+        for line in iter(lambda: stdout.readline(2048), ""):
+            print(line, end="")
+    else:
+        out = stdout.read()
+
+    # resolv.conf
+    # with open('/etc/resolv.conf', 'r') as f:
+    #     resolv_conf_data = f.read()
+    #
+    # _resolv_conf_data = shlex.quote(resolv_conf_data)
+    # command = 'sudo echo {} > /var/lib/machines/{id}/etc/resolv.conf'.format(_resolv_conf_data, **container)
+    command = 'sudo echo "nameserver 8.8.8.8" > /var/lib/machines/{id}/etc/resolv.conf'.format(**container)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # enable systemd-network
+    s = '/var/lib/machines/{id}/usr/lib/systemd/system/systemd-networkd.service'.format(**container)
+    d = '/var/lib/machines/{id}/etc/systemd/system/multi-user.target.wants/systemd-networkd.service'.format(**container)
+    command = 'sudo ln -s "{}" "{}"'.format(s, d)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # enable sshd
+    s = '/var/lib/machines/{id}/usr/lib/systemd/system/sshd.service'.format(**container)
+    d = '/var/lib/machines/{id}/etc/systemd/system/multi-user.target.wants/sshd.service'.format(**container)
+    command = 'sudo ln -s "{}" "{}"'.format(s, d)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+
+def destory_container(uri, container, verbose=False):
+    username, address = uri.split('@')
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+
+    # rm dir
+    command = 'sudo rm -r "/var/lib/machines/{id}"'.format(**container)
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    err = stderr.read()
+    stdin.close()
+
+    if err:
+        raise IOError(err)
+
+
+def load_remote_config(uri, filename='nspawn.yaml'):
+    username, address = uri.split('@')
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+    command = 'cat "{}"'.format(filename)
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+    
+    if err:
+        raise IOError(err)
+
+    config = yaml.load(out)
     return config
 
 
-def save_remote_config(remote_uri, config, filename='nspawn.yaml'):
-    remote_username, remote_address = remote_uri.split('@')
+def save_remote_config(uri, config, filename='nspawn.yaml'):
+    username, address = uri.split('@')
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
     client.load_host_keys(known_hosts_path)
-    client.connect(remote_address, username=remote_username)
+    client.connect(address, username=username)
     _config = shlex.quote(yaml.dump(config))
-    cmd = 'echo {} > {}'.format(_config, filename)
-    stdin, stdout, stderr = client.exec_command(cmd)
-
+    command = 'echo {} > "{}"'.format(_config, filename)
+    stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
+    stdin.close()
     
     if err:
         raise IOError(err)
@@ -67,15 +169,19 @@ def merge_remote_configs(configs):
     return config
 
 
-def load_consensus_config(remote_uri, filename='nspawn.yaml'):
-    remote_username, remote_address = remote_uri.split('@')
+def load_consensus_config(uri, filename='nspawn.yaml'):
     configs = []
-    config = load_remote_config(remote_uri)
+    config = load_remote_config(uri)
     machines = config.get('machines', {})
 
     for machine_id, machine in machines.items():
-        machine_uri = '{}@{}'.format(machine['user'], machine['address'])
-        config = load_remote_config(machine_uri)
+        machine_uri = '{user}@{address}'.format(**machine)
+
+        try:
+            config = load_remote_config(machine_uri)
+        except Exception as e:
+            continue
+
         configs.append(config)
 
     config = merge_remote_configs(configs)
@@ -87,7 +193,7 @@ def save_consensus_config(config, filename='nspawn.yaml'):
     
     for machine_id, machine in machines.items():
         try:
-            machine_uri = '{}@{}'.format(machine['user'], machine['address'])
+            machine_uri = '{user}@{address}'.format(**machine)
             save_remote_config(machine_uri, config)
         except Exception as e:
             err = 'Error saving config on {} with machine id {}.'.format(
@@ -263,7 +369,7 @@ def container_list(remote_uri, project_id):
         ))
 
 
-def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, image):
+def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, image, verbose):
     remote_username, remote_address = remote_uri.split('@')
     config = load_consensus_config(remote_uri)
     containers = config['containers']
@@ -300,6 +406,8 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
         m_id, m = list(machines.items())[0]
         machine_id = m_id
 
+    machine = machines[machine_id]
+
     # generate random ID
     m = hashlib.sha1()
     m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
@@ -317,12 +425,15 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
         'image': image,
     }
 
+    # create systemd-nspawn container on machine
+    uri = '{user}@{address}'.format(**machine)
+    create_container(uri, container, verbose)
     containers[container_id] = container
     save_consensus_config(config)
     print('{}'.format(container_id))
 
 
-def container_remove(remote_uri, project_id, container_id):
+def container_remove(remote_uri, project_id, container_id, verbose):
     remote_username, remote_address = remote_uri.split('@')
     config = load_consensus_config(remote_uri)
     containers = config['containers']
@@ -342,6 +453,8 @@ def container_remove(remote_uri, project_id, container_id):
         print(msg, file=sys.stderr)
         sys.exit(1)
 
+    project = projects[project_id]
+
     # convert short ID to long ID
     if len(container_id) == 12:
         for c_id in containers:
@@ -354,6 +467,15 @@ def container_remove(remote_uri, project_id, container_id):
         print(msg, file=sys.stderr)
         sys.exit(1)
 
+    container = containers[container_id]
+
+    # machine
+    machines = config['machines']
+    machine = machines[container['machine_id']]
+
+    # create systemd-nspawn container on machine
+    uri = '{user}@{address}'.format(**machine)
+    destory_container(uri, container, verbose)
     del containers[container_id]
     save_consensus_config(config)
     print('{}'.format(container_id))
@@ -429,14 +551,16 @@ if __name__ == '__main__':
     container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch, debian, fedora')
     container_add_parser.add_argument('--image-id', '-I', help='Image ID')
     container_add_parser.add_argument('--image', '-i', help='Image')
+    container_add_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # container remove
     container_remove_parser = container_subparsers.add_parser('remove', help='Remove container')
     container_remove_parser.add_argument('--id', '-I', help='Container ID')
+    container_remove_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # parse args
     args = parser.parse_args()
-    # print(args)
+    print(args)
 
     if args.subparser == 'machine':
         if args.machine_subparser == 'list':
@@ -456,9 +580,24 @@ if __name__ == '__main__':
         if args.container_subparser == 'list':
             container_list(args.remote_address, args.project_id)
         elif args.container_subparser == 'add':
-            container_add(args.remote_address, args.project_id, args.address, args.name, args.ports, args.distro, args.image_id, args.image)
+            container_add(
+                args.remote_address,
+                args.project_id,
+                args.address,
+                args.name,
+                args.ports,
+                args.distro,
+                args.image_id,
+                args.image,
+                args.verbose,
+            )
         elif args.container_subparser == 'remove':
-            container_remove(args.remote_address, args.project_id, args.id)
+            container_remove(
+                args.remote_address,
+                args.project_id,
+                args.id,
+                args.verbose,
+            )
         elif args.container_subparser == 'start':
             container_start(args.remote_address, args.project_id, args.id)
         elif args.container_subparser == 'stop':
