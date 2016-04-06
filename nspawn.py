@@ -530,6 +530,7 @@ def container_remove(remote_uri, project_id, container_id, verbose):
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
+    # FIXME:
     # check if container is running
     # if yes, stop it first
 
