@@ -12,6 +12,23 @@ import paramiko
 
 
 #
+# local
+#
+def load_local_config():
+    if os.path.exists('nspawn.conf'):
+        with open('nspawn.conf', 'r') as f:
+            config = yaml.load(f)
+    else:
+        config = {}
+
+    return config
+
+
+def save_local_config(config):
+    with open('nspawn.conf', 'w') as f:
+        yaml.dump(config, f)
+
+#
 # ssh
 #
 def create_container(uri, container, verbose=False):
@@ -47,7 +64,8 @@ def create_container(uri, container, verbose=False):
         time.sleep(5.0)
 
     # boostrap container
-    command = 'sudo pacstrap -c -d "/var/lib/machines/{id}" base vim openssh'.format(**container)
+    machine_dir = '/var/lib/machines/{id}'.format(**container)
+    command = 'sudo pacstrap -c -d "{}" base vim openssh'.format(machine_dir)
     print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -59,29 +77,36 @@ def create_container(uri, container, verbose=False):
         out = stdout.read()
 
     # resolv.conf
-    # with open('/etc/resolv.conf', 'r') as f:
-    #     resolv_conf_data = f.read()
-    #
-    # _resolv_conf_data = shlex.quote(resolv_conf_data)
-    # command = 'sudo echo {} > /var/lib/machines/{id}/etc/resolv.conf'.format(_resolv_conf_data, **container)
-    command = 'sudo echo "nameserver 8.8.8.8" > /var/lib/machines/{id}/etc/resolv.conf'.format(**container)
-    print('{!r}'.format(command))
+    command = ''.join([
+        'sudo echo "nameserver 8.8.8.8" > ',
+        '{}/etc/resolv.conf'.format(machine_dir),
+    ])
+
+    if verbose:
+        print('{!r}'.format(command))
+
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # enable systemd-network
-    s = '/var/lib/machines/{id}/usr/lib/systemd/system/systemd-networkd.service'.format(**container)
-    d = '/var/lib/machines/{id}/etc/systemd/system/multi-user.target.wants/systemd-networkd.service'.format(**container)
-    command = 'sudo ln -s "{}" "{}"'.format(s, d)
-    print('{!r}'.format(command))
+    s = '/usr/lib/systemd/system/systemd-networkd.service'
+    d = '/etc/systemd/system/multi-user.target.wants/systemd-networkd.service'
+    command = 'sudo ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    
+    if verbose:
+        print('{!r}'.format(command))
+    
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # enable sshd
-    s = '/var/lib/machines/{id}/usr/lib/systemd/system/sshd.service'.format(**container)
-    d = '/var/lib/machines/{id}/etc/systemd/system/multi-user.target.wants/sshd.service'.format(**container)
-    command = 'sudo ln -s "{}" "{}"'.format(s, d)
-    print('{!r}'.format(command))
+    s = '/usr/lib/systemd/system/sshd.service'
+    d = '/etc/systemd/system/multi-user.target.wants/sshd.service'
+    command = 'sudo ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    
+    if verbose:
+        print('{!r}'.format(command))
+    
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
@@ -96,7 +121,10 @@ def destory_container(uri, container, verbose=False):
 
     # rm dir
     command = 'sudo rm -r "/var/lib/machines/{id}"'.format(**container)
-    print('{!r}'.format(command))
+    
+    if verbose:
+        print('{!r}'.format(command))
+
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
     stdin.close()
@@ -171,7 +199,18 @@ def merge_remote_configs(configs):
 
 def load_consensus_config(uri, filename='nspawn.yaml'):
     configs = []
-    config = load_remote_config(uri)
+
+    try:
+        config = load_remote_config(uri)
+    except Exception as e:
+        config = {
+            'machines': {},
+            'projects': {},
+            'containers': {},
+        }
+
+        return config
+
     machines = config.get('machines', {})
 
     for machine_id, machine in machines.items():
@@ -205,9 +244,30 @@ def save_consensus_config(config, filename='nspawn.yaml'):
 
 
 #
+# config
+#
+def config_config(section, property_, value=None):
+    config = load_local_config()
+
+    if section not in config:
+        config[section] = {}
+
+    if value:
+        config[section][property_] = value    
+        save_local_config(config)
+    else:
+        value = config[section][property_]
+        print(value)
+
+
+#
 # machine
 #
 def machine_list(remote_uri):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_config = load_consensus_config(remote_uri)
     machine_items = remote_config.get('machines', {}).items()
     machine_items = list(machine_items)
@@ -222,6 +282,10 @@ def machine_list(remote_uri):
 
 
 def machine_add(remote_uri, uri):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     username, address = uri.split('@')
     config = load_consensus_config(remote_uri)
@@ -251,6 +315,10 @@ def machine_add(remote_uri, uri):
 
 
 def machine_remove(remote_uri, machine_id):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     username, address = uri.split('@')
     config = load_consensus_config(remote_uri)
@@ -277,6 +345,10 @@ def machine_remove(remote_uri, machine_id):
 # project
 #
 def project_list(remote_uri):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_config = load_consensus_config(remote_uri)
     project_items = remote_config.get('projects', {}).items()
     project_items = list(project_items)
@@ -291,6 +363,10 @@ def project_list(remote_uri):
 
 
 def project_add(remote_uri, project_name):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     config = load_consensus_config(remote_uri)
     projects = config['projects']
@@ -318,6 +394,10 @@ def project_add(remote_uri, project_name):
 
 
 def project_remove(remote_uri, project_id):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     username, address = uri.split('@')
     config = load_consensus_config(remote_uri)
@@ -344,6 +424,10 @@ def project_remove(remote_uri, project_id):
 # container
 #
 def container_list(remote_uri, project_id):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_config = load_consensus_config(remote_uri)
     container_items = remote_config.get('containers', {}).items()
     container_items = [n for n in container_items if n[1]['project_id'].endswith(project_id)]
@@ -370,6 +454,10 @@ def container_list(remote_uri, project_id):
 
 
 def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, image, verbose):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     config = load_consensus_config(remote_uri)
     containers = config['containers']
@@ -434,9 +522,16 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
 
 
 def container_remove(remote_uri, project_id, container_id, verbose):
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
+
     remote_username, remote_address = remote_uri.split('@')
     config = load_consensus_config(remote_uri)
     containers = config['containers']
+
+    # check if container is running
+    # if yes, stop it first
 
     # check if project id exists
     projects = config['projects']
@@ -482,26 +577,39 @@ def container_remove(remote_uri, project_id, container_id, verbose):
 
 
 def container_start(remote_uri, project_id, container_id):
-    pass
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
 
 
 def container_stop(remote_uri, project_id, container_id):
-    pass
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
 
 
 def container_restart(remote_uri, project_id, container_id):
-    pass
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
 
 
 def container_migrate(remote_uri, project_id, container_id):
-    pass
+    if not remote_uri:
+        config = load_local_config()
+        remote_uri = config['main']['remote_address']
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='systemd-nspawn deployment')
     parser_subparsers = parser.add_subparsers(dest='subparser', metavar='main')
     parser.add_argument('--remote-address', '-r', help='Remote address')
-    # parser.add_argument('--project-id', '-C', help='Project ID')
+
+    # config
+    config_parser = parser_subparsers.add_parser('config')
+    config_parser.add_argument('--section', '-s', default='main', help='Section')
+    config_parser.add_argument('--property', '-p', help='Propery')
+    config_parser.add_argument('--value', '-v', help='Value')
     
     # machine
     machine_parser = parser_subparsers.add_parser('machine')
@@ -560,9 +668,11 @@ if __name__ == '__main__':
 
     # parse args
     args = parser.parse_args()
-    print(args)
+    # print(args)
 
-    if args.subparser == 'machine':
+    if args.subparser == 'config':
+        config_config(args.section, args.property, args.value)
+    elif args.subparser == 'machine':
         if args.machine_subparser == 'list':
             machine_list(args.remote_address)
         elif args.machine_subparser == 'add':
