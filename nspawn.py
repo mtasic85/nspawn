@@ -10,6 +10,25 @@ import argparse
 import yaml
 import paramiko
 
+#
+# util
+#
+def convert_uri_to_user_host_port(uri):
+    if '@' in uri:
+        user, address = uri.split('@')
+    else:
+        user = 'root'
+        address = uri
+
+    if ':' in address:
+        host, port = address.split(':')
+        port = int(port)
+    else:
+        host = address
+        port = 22
+
+    return user, host, port
+
 
 #
 # local
@@ -29,7 +48,7 @@ def save_local_config(config):
         yaml.dump(config, f)
 
 #
-# ssh
+# remote
 #
 def create_container(uri, container, verbose=False):
     username, address = uri.split('@')
@@ -241,6 +260,79 @@ def save_consensus_config(config, filename='nspawn.yaml'):
             )
 
             print(err, file=sys.stderr)
+
+
+def find_available_machine(config):
+    machines = config['machines']
+    containers = config['containers']
+    machine_id = None
+    b = False
+
+    for m_id, m in machines.items():
+        for c_id, c in containers.items():
+            if c['name'] != name:
+                machine_id = m_id
+                b = True
+                break
+
+        if b:
+            break
+    else:
+        m_id, m = list(machines.items())[0]
+        machine_id = m_id
+
+    machine = machines[machine_id]
+    return machine
+
+
+def parse_ports(ports_str):
+    ports = []
+
+    for n in ports_str.split(','):
+        if ':' in n:
+            src_port, dest_port = map(int, n.split(':'))
+        else:
+            src_port, dest_port = None, int(n)
+
+        ports.append((src_port, dest_port))
+
+    return ports
+
+
+def find_available_machine_port(config, machine, dest_port):
+    containers = {
+        n: m
+        for n, m in config['containers'].items()
+        if m['machine_id'] == machine['id']
+    }
+
+    containers_ports_map = {}
+    
+    for container_id, container in containers.items():
+        for c_src_port, c_dest_port in container['ports'].items():
+            containers_ports_map[c_src_port] = c_dest_port
+
+    port = dest_port
+
+    if port < 10000:
+        port += 10000
+
+    while port in containers_ports_map:
+        port += 1
+
+    return port
+
+
+def find_available_machine_ports(config, machine, ports):
+    available_ports_map = {}
+
+    for src_port, dest_port in ports:
+        if not src_port:
+            src_port = find_available_machine_port(config, machine, dest_port)
+
+        available_ports_map[src_port] = dest_port
+
+    return available_ports_map
 
 
 #
@@ -478,6 +570,7 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
         sys.exit(1)
 
     # find suitable machine where to host container
+    '''
     machines = config['machines']
     b = False
 
@@ -495,6 +588,8 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
         machine_id = m_id
 
     machine = machines[machine_id]
+    '''
+    machine = find_available_machine(config)
 
     # generate random ID
     m = hashlib.sha1()
@@ -504,7 +599,7 @@ def container_add(remote_uri, project_id, uri, name, ports, distro, image_id, im
     container = {
         'id': container_id,
         'project_id': project_id,
-        'machine_id': machine_id,
+        'machine_id': machine['id'],
         'address': remote_address,
         'name': name,
         'ports': ports,
