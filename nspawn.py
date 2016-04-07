@@ -30,6 +30,20 @@ def convert_uri_to_user_host_port(uri):
     return user, host, port
 
 
+def parse_ports(ports_str):
+    ports = []
+
+    for n in ports_str.split(','):
+        if ':' in n:
+            src_port, dest_port = map(int, n.split(':'))
+        else:
+            src_port, dest_port = None, int(n)
+
+        ports.append((src_port, dest_port))
+
+    return ports
+
+
 #
 # local
 #
@@ -285,20 +299,6 @@ def find_available_machine(config):
     return machine
 
 
-def parse_ports(ports_str):
-    ports = []
-
-    for n in ports_str.split(','):
-        if ':' in n:
-            src_port, dest_port = map(int, n.split(':'))
-        else:
-            src_port, dest_port = None, int(n)
-
-        ports.append((src_port, dest_port))
-
-    return ports
-
-
 def find_available_machine_port(config, machine, dest_port):
     containers = {
         n: m
@@ -307,7 +307,7 @@ def find_available_machine_port(config, machine, dest_port):
     }
 
     containers_ports_map = {}
-    
+
     for container_id, container in containers.items():
         for c_src_port, c_dest_port in container['ports'].items():
             containers_ports_map[c_src_port] = c_dest_port
