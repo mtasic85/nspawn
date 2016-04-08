@@ -179,27 +179,48 @@ def create_container(uri, container, verbose=False):
     stdin.close()
 
     # override service
+    p = '/etc/systemd/system/systemd-nspawn\@{}.service.d/override.conf'.format(container['id'])
+    command = 'sudo touch {}'.format(p)
+    if verbose: print('{!r}'.format(command))
+    print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+    print('out: {!r}'.format(out))
+    print('err: {!r}'.format(err))
+
+    # override service
     # vim /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d/override.conf
     # [Service]
     # ExecStart=
     # ExecStart=/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth --port=10022:22 --port=13306:3306 --machine=8747d5dd3f96c84f4160165ad2fc1ed33fa5209b
-    exec_start = '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
-        ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
-        container['id'],
+    command = 'sudo bash -c \'printf "[Service]\\nExecStart=\\nExecStart={}" > {}\''.format(
+        '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
+            ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
+            container['id'],
+        ),
+        '/etc/systemd/system/systemd-nspawn\@{}.service.d/override.conf'.format(container['id'])
     )
 
-    p = '/etc/systemd/system/systemd-nspawn@{}.service.d/override.conf'.format(container['id'])
-    command = 'sudo printf "[Service]\\nExecStart=\\nExecStart={}" > "{}"'.format(exec_start, p)
     if verbose: print('{!r}'.format(command))
     print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
+    print('out: {!r}'.format(out))
+    print('err: {!r}'.format(err))
 
     # demon-reload
     command = 'sudo systemctl daemon-reload'
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
+    print('out: {!r}'.format(out))
+    print('err: {!r}'.format(err))
 
     # FIXME:
     # possibly run container
