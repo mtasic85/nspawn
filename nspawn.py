@@ -179,18 +179,6 @@ def create_container(uri, container, verbose=False):
     stdin.close()
 
     # override service
-    p = '/etc/systemd/system/systemd-nspawn\@{}.service.d/override.conf'.format(container['id'])
-    command = 'sudo touch {}'.format(p)
-    if verbose: print('{!r}'.format(command))
-    print('{!r}'.format(command))
-    stdin, stdout, stderr = client.exec_command(command)
-    out = stdout.read()
-    err = stderr.read()
-    stdin.close()
-    print('out: {!r}'.format(out))
-    print('err: {!r}'.format(err))
-
-    # override service
     # vim /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d/override.conf
     # [Service]
     # ExecStart=
