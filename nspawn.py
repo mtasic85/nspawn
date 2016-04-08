@@ -80,7 +80,7 @@ def create_container(uri, container, verbose=False):
     client.connect(address, username=username)
 
     # create machine dir
-    command = 'sudo mkdir -p "/var/lib/machines/{id}"'.format(**container)
+    command = 'mkdir -p "/var/lib/machines/{id}"'.format(**container)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
@@ -105,7 +105,7 @@ def create_container(uri, container, verbose=False):
 
     # boostrap container
     machine_dir = '/var/lib/machines/{id}'.format(**container)
-    command = 'sudo pacstrap -c -d "{}" base vim openssh'.format(machine_dir)
+    command = 'pacstrap -c -d "{}" base vim openssh'.format(machine_dir)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -118,7 +118,7 @@ def create_container(uri, container, verbose=False):
 
     # resolv.conf
     command = ''.join([
-        'sudo echo "nameserver 8.8.8.8" > ',
+        'echo "nameserver 8.8.8.8" > ',
         '{}/etc/resolv.conf'.format(machine_dir),
     ])
 
@@ -129,7 +129,7 @@ def create_container(uri, container, verbose=False):
     # enable systemd-network
     s = '/usr/lib/systemd/system/systemd-networkd.service'
     d = '/etc/systemd/system/multi-user.target.wants/systemd-networkd.service'
-    command = 'sudo ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -137,7 +137,7 @@ def create_container(uri, container, verbose=False):
     # enable sshd
     s = '/usr/lib/systemd/system/sshd.service'
     d = '/etc/systemd/system/multi-user.target.wants/sshd.service'
-    command = 'sudo ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -148,10 +148,14 @@ def create_container(uri, container, verbose=False):
     f = '#PermitRootLogin prohibit-password'
     t = 'PermitRootLogin yes'
     p = '{}/etc/ssh/sshd_config'.format(machine_dir)
-    command = 'sudo sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
+    command = 'sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
+    print('out: {!r}'.format(out))
+    print('err: {!r}'.format(err))
 
     # patch sshd
     # sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/g' \
@@ -159,21 +163,25 @@ def create_container(uri, container, verbose=False):
     f = '#PermitEmptyPasswords no'
     t = 'PermitEmptyPasswords yes'
     p = '{}/etc/ssh/sshd_config'.format(machine_dir)
-    command = 'sudo sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
+    command = 'sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
+    print('out: {!r}'.format(out))
+    print('err: {!r}'.format(err))
 
     # enable service
     # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl enable systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
     
     # override service
     # mkdir -p /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d
-    command = 'sudo mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
+    command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -183,7 +191,7 @@ def create_container(uri, container, verbose=False):
     # [Service]
     # ExecStart=
     # ExecStart=/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth --port=10022:22 --port=13306:3306 --machine=8747d5dd3f96c84f4160165ad2fc1ed33fa5209b
-    command = 'sudo bash -c \'printf "[Service]\\nExecStart=\\nExecStart={}" > {}\''.format(
+    command = 'printf "[Service]\\nExecStart=\\nExecStart={}" >{}'.format(
         '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
             ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
             container['id'],
@@ -201,7 +209,7 @@ def create_container(uri, container, verbose=False):
     print('err: {!r}'.format(err))
 
     # demon-reload
-    command = 'sudo systemctl daemon-reload'
+    command = 'systemctl daemon-reload'
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
@@ -225,26 +233,26 @@ def destory_container(uri, container, verbose=False):
     # FIXME: should we stop here?
     # stop service
     # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl stop systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # disable service
     # systemctl disable systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl disable systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl disable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # rm dir
-    command = 'sudo rm -r /var/lib/machines/{}'.format(container['id'])
+    command = 'rm -r /var/lib/machines/{}'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # rm service
-    command = 'sudo rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
+    command = 'rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -795,7 +803,7 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
 
     # start service
     # systemctl start systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl start systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -824,7 +832,7 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
 
     # stop service
     # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl stop systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -853,7 +861,7 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
 
     # restart service
     # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'sudo systemctl restart systemd-nspawn@{}.service'.format(container['id'])
+    command = 'systemctl restart systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()

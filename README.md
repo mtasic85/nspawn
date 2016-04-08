@@ -76,3 +76,10 @@ $ ssh dcloud@192.168.0.150
 
 If you could connect to remote server without typing password, everything is good. Otherwise, please check your SSH keys, and try to copy them from local machine to remote server.
 
+
+# TODO
+
+1) SSH root with password
+2) Copy root key
+3) SSH root without password
+4) SSH root only with key
