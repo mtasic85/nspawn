@@ -1,25 +1,27 @@
 # Introduction
-nspawn-deploy is simple systemd-nspawn deployment utility.
+*nspawn* is simple *systemd-nspawn* deployment utility.
 
-Basic idea is to allow running containers across clusters of servers.
+Basic idea is to allow running containers across clusters of machines.
 
-Communication between local machine and cluster of servers (also known as nodes) has to be secure by design. For this reason we use SSH for all communication between all nodes in system. 
+Communication between local machine and cluster of machines (also known as nodes) has to be secure by design. For this reason we use SSH for all communication between all nodes in system. 
 
 
-# Remote servers
+# Remote machines
 
 Arch Linux post-install requires:
 ```
 # pacman-key --init
 # pacman-key --populate archlinux
 # pacman-key --refresh-keys
-# pacman -Syyuu
+# pacman -Syu
 ```
 
 ## systemd-nspawn
 
 ```
 # pacman -Sy arch-install-scripts
+# systemctl enable machines.target
+# systemctl start machines.target
 ```
 
 ## SSH
