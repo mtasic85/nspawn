@@ -11,6 +11,7 @@ import argparse
 import yaml
 import paramiko
 
+
 #
 # util
 #
@@ -49,8 +50,10 @@ def parse_ports(ports_str):
 # local
 #
 def load_local_config():
-    if os.path.exists('nspawn.conf'):
-        with open('nspawn.conf', 'r') as f:
+    filename = 'nspawn.local.conf'
+
+    if os.path.exists(filename):
+        with open(filename, 'r') as f:
             config = yaml.load(f)
     else:
         config = {}
@@ -59,8 +62,11 @@ def load_local_config():
 
 
 def save_local_config(config):
-    with open('nspawn.conf', 'w') as f:
+    filename = 'nspawn.local.conf'
+
+    with open(filename, 'w') as f:
         yaml.dump(config, f)
+
 
 #
 # remote
@@ -163,15 +169,11 @@ def create_container(uri, container, verbose=False):
     command = 'sudo systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
-    err = stderr.read()
     stdin.close()
-
-    if err:
-        raise IOError(err)
     
     # override service
     # mkdir -p /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d
-    command = 'sudo mkdir -p /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
+    command = 'sudo mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -182,13 +184,14 @@ def create_container(uri, container, verbose=False):
     # ExecStart=
     # ExecStart=/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth --port=10022:22 --port=13306:3306 --machine=8747d5dd3f96c84f4160165ad2fc1ed33fa5209b
     exec_start = '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
-        ' '.join('--port={}:{}' for k, v in container['ports'].items()),
+        ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
         container['id'],
     )
 
     p = '/etc/systemd/system/systemd-nspawn@{}.service.d/override.conf'.format(container['id'])
-    command = r'sudo printf "[Service]\nExecStart=\nExecStart={}" > {}'.format(exec_start, p)
+    command = 'sudo printf "[Service]\\nExecStart=\\nExecStart={}" > "{}"'.format(exec_start, p)
     if verbose: print('{!r}'.format(command))
+    print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
@@ -223,31 +226,19 @@ def destory_container(uri, container, verbose=False):
     command = 'sudo systemctl disable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
-    err = stderr.read()
     stdin.close()
-
-    if err:
-        raise IOError(err)
 
     # rm dir
     command = 'sudo rm -r /var/lib/machines/{}'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
-    err = stderr.read()
     stdin.close()
-
-    if err:
-        raise IOError(err)
 
     # rm service
     command = 'sudo rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
-    err = stderr.read()
     stdin.close()
-
-    if err:
-        raise IOError(err)
 
 
 def load_remote_config(uri, filename='nspawn.yaml'):
@@ -439,7 +430,7 @@ def config_config(section, property_, value=None):
 #
 # machine
 #
-def machine_list(remote_uri):
+def machine_list(remote_uri, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -457,7 +448,7 @@ def machine_list(remote_uri):
         ))
 
 
-def machine_add(remote_uri, uri):
+def machine_add(remote_uri, uri, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -490,7 +481,7 @@ def machine_add(remote_uri, uri):
     print('{}'.format(machine_id))
 
 
-def machine_remove(remote_uri, machine_id):
+def machine_remove(remote_uri, machine_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -520,7 +511,7 @@ def machine_remove(remote_uri, machine_id):
 #
 # project
 #
-def project_list(remote_uri):
+def project_list(remote_uri, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -538,7 +529,7 @@ def project_list(remote_uri):
         ))
 
 
-def project_add(remote_uri, project_name):
+def project_add(remote_uri, project_name, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -569,7 +560,7 @@ def project_add(remote_uri, project_name):
     print('{}'.format(project_id))
 
 
-def project_remove(remote_uri, project_id):
+def project_remove(remote_uri, project_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -599,7 +590,7 @@ def project_remove(remote_uri, project_id):
 #
 # container
 #
-def container_list(remote_uri, project_id):
+def container_list(remote_uri, project_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -641,7 +632,7 @@ def container_list(remote_uri, project_id):
         ))
 
 
-def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id, image, verbose):
+def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id, image, verbose=False):
     # remote_uri
     if not remote_uri:
         local_config = load_local_config()
@@ -712,7 +703,7 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
     ))
 
 
-def container_remove(remote_uri, project_id, container_id, verbose):
+def container_remove(remote_uri, project_id, container_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -772,7 +763,7 @@ def container_remove(remote_uri, project_id, container_id, verbose):
     print('{}'.format(container_id))
 
 
-def container_start(remote_uri, project_id, container_id):
+def container_start(remote_uri, project_id, container_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -781,8 +772,27 @@ def container_start(remote_uri, project_id, container_id):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+    container = containers[container_id]
 
-def container_stop(remote_uri, project_id, container_id):
+    # ssh client
+    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+
+    # start service
+    # systemctl start systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
+    command = 'sudo systemctl start systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+
+def container_stop(remote_uri, project_id, container_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -791,8 +801,27 @@ def container_stop(remote_uri, project_id, container_id):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+    container = containers[container_id]
 
-def container_restart(remote_uri, project_id, container_id):
+    # ssh client
+    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+
+    # stop service
+    # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
+    command = 'sudo systemctl stop systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+
+def container_restart(remote_uri, project_id, container_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -801,8 +830,27 @@ def container_restart(remote_uri, project_id, container_id):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+    container = containers[container_id]
 
-def container_migrate(remote_uri, project_id, container_id):
+    # ssh client
+    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+
+    # restart service
+    # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
+    command = 'sudo systemctl restart systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+
+def container_migrate(remote_uri, project_id, container_id, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -810,6 +858,20 @@ def container_migrate(remote_uri, project_id, container_id):
     if not project_id:
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
+
+    config = load_consensus_config(remote_uri)
+    containers = config['containers']
+    container = containers[container_id]
+
+    # ssh client
+    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    client = paramiko.client.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
+    client.load_host_keys(known_hosts_path)
+    client.connect(address, username=username)
+
+    raise NotImplementedError
 
 
 if __name__ == '__main__':
@@ -877,6 +939,21 @@ if __name__ == '__main__':
     container_remove_parser = container_subparsers.add_parser('remove', help='Remove container')
     container_remove_parser.add_argument('--id', '-I', help='Container ID')
     container_remove_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
+
+    # container start
+    container_start_parser = container_subparsers.add_parser('start', help='Start container')
+    container_start_parser.add_argument('--id', '-I', help='Container ID')
+    container_start_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
+
+    # container stop
+    container_stop_parser = container_subparsers.add_parser('stop', help='Stop container')
+    container_stop_parser.add_argument('--id', '-I', help='Container ID')
+    container_stop_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
+
+    # container restart
+    container_restart_parser = container_subparsers.add_parser('restart', help='Restart container')
+    container_restart_parser.add_argument('--id', '-I', help='Container ID')
+    container_restart_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # parse args
     args = parser.parse_args()
