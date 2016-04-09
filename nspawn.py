@@ -17,16 +17,16 @@ import paramiko
 #
 def parse_uri(uri):
     if '@' in uri:
-        user, address = uri.split('@')
+        user, host = uri.split('@')
     else:
         user = 'root'
-        address = uri
+        host = uri
 
-    if ':' in address:
-        host, port = address.split(':')
+    if ':' in host:
+        host, port = host.split(':')
         port = int(port)
     else:
-        host = address
+        host = host
         port = 22
 
     return user, host, port
@@ -71,13 +71,20 @@ def save_local_config(config):
 #
 # remote
 #
-def create_container(uri, container, verbose=False):
-    username, address, port = parse_uri(uri)
+def ssh_client(uri):
+    # FIXME: unused port
+    user, host, port = parse_uri(uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
     client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    client.connect(host, username=user)
+    return client
+
+
+def create_container(uri, container, verbose=False):
+    # ssh client
+    client = ssh_client(uri)
 
     # create machine dir
     command = 'mkdir -p "/var/lib/machines/{id}"'.format(**container)
@@ -221,14 +228,13 @@ def create_container(uri, container, verbose=False):
     # FIXME:
     # possibly run container
 
+    # close ssh client
+    client.close()
+
 
 def destory_container(uri, container, verbose=False):
-    username, address, port = parse_uri(uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    # ssh client
+    client = ssh_client(uri)
 
     # FIXME: should we stop here?
     # stop service
@@ -257,42 +263,41 @@ def destory_container(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
+    # close ssh client
+    client.close()
+
 
 def load_remote_config(uri, filename='nspawn.yaml'):
-    username, address, port = parse_uri(uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    # ssh client
+    client = ssh_client(uri)
+
     command = 'cat "{}"'.format(filename)
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    stdin.close()
-    
-    if err:
-        raise IOError(err)
+    stdin.close()    
+    if err: raise IOError(err)
 
+    # close ssh client
+    client.close()
+    
     config = yaml.load(out)
     return config
 
 
 def save_remote_config(uri, config, filename='nspawn.yaml'):
-    username, address, port = parse_uri(uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    # ssh client
+    client = ssh_client(uri)
+
     _config = shlex.quote(yaml.dump(config))
     command = 'echo {} > "{}"'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
     stdin.close()
-    
-    if err:
-        raise IOError(err)
+    if err: raise IOError(err)
+
+    # close ssh client
+    client.close()
 
 
 def merge_remote_configs(configs):
@@ -322,7 +327,7 @@ def merge_remote_configs(configs):
     return config
 
 
-def load_consensus_config(uri, filename='nspawn.yaml'):
+def load_consensus_config(uri, filename='nspawn.remote.conf'):
     configs = []
 
     try:
@@ -339,7 +344,7 @@ def load_consensus_config(uri, filename='nspawn.yaml'):
     machines = config.get('machines', {})
 
     for machine_id, machine in machines.items():
-        machine_uri = '{user}@{address}'.format(**machine)
+        machine_uri = '{user}@{host}'.format(**machine)
 
         try:
             config = load_remote_config(machine_uri)
@@ -352,16 +357,16 @@ def load_consensus_config(uri, filename='nspawn.yaml'):
     return config
 
 
-def save_consensus_config(config, filename='nspawn.yaml'):
+def save_consensus_config(config, filename='nspawn.remote.conf'):
     machines = config.get('machines', {})
     
     for machine_id, machine in machines.items():
         try:
-            machine_uri = '{user}@{address}'.format(**machine)
+            machine_uri = '{user}@{host}'.format(**machine)
             save_remote_config(machine_uri, config)
         except Exception as e:
             err = 'Error saving config on {} with machine id {}.'.format(
-                machine['address'],
+                machine['host'],
                 machine_id,
             )
 
@@ -454,14 +459,20 @@ def machine_list(remote_uri, verbose=False):
 
     remote_config = load_consensus_config(remote_uri)
     machine_items = remote_config.get('machines', {}).items()
-    machine_items = list(machine_items)
-    machine_items = sorted(machine_items, key=lambda n: n[1]['address'])
+    machine_items = sorted(
+        list(machine_items),
+        key=lambda n: (n[1]['host'], n[1]['port'])
+    )
     print('{a: <12} {b: <67}'.format(a='MACHINE_ID', b='ADDRESS'))
 
     for machine_id, machine in machine_items:
         print('{a: <12} {b: <67}'.format(
-            a=machine['id'][-12:],
-            b='{}@{}'.format(machine['user'], machine['address']),
+            a=machine['id'],
+            b='{}@{}:{}'.format(
+                machine['user'],
+                machine['host'],
+                machine['port'],
+            ),
         ))
 
 
@@ -470,32 +481,33 @@ def machine_add(remote_uri, uri, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
-    username, address, port = parse_uri(uri)
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
+    user, host, port = parse_uri(uri)
     config = load_consensus_config(remote_uri)
     machines = config['machines']
 
-    # check if address already exists
+    # check if host already exists
     for machine_id, machine in machines.items():
-        if address == machine['address']:
-            msg = 'Machine with address {} already exists'.format(address)
+        if host == machine['host']:
+            msg = 'Machine with host {} already exists'.format(host)
             print(msg, file=sys.stderr)
             sys.exit(1)
 
     # generate random ID
     m = hashlib.sha1()
     m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
-    machine_id = m.hexdigest()
+    machine_id = m.hexdigest()[-12:]
 
     machine = {
         'id': machine_id,
-        'user': username,
-        'address': address,
+        'user': user,
+        'host': host,
+        'port': port,
     }
 
     machines[machine_id] = machine
     save_consensus_config(config)
-    print('{}'.format(machine_id))
+    print('{} {}@{}:{}'.format(machine_id, user, host, port))
 
 
 def machine_remove(remote_uri, machine_id, verbose=False):
@@ -503,16 +515,9 @@ def machine_remove(remote_uri, machine_id, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     machines = config['machines']
-
-    # convert short ID to long ID
-    if len(machine_id) == 12:
-        for m_id in machines:
-            if m_id[-12:] == machine_id:
-                machine_id = m_id
-                break
 
     if machine_id not in machines:
         msg = 'Machine with id {} does not exists'.format(machine_id)
@@ -540,7 +545,7 @@ def project_list(remote_uri, verbose=False):
 
     for project_id, project in project_items:
         print('{a: <12} {b: <67}'.format(
-            a=project['id'][-12:],
+            a=project['id'],
             b='{}'.format(project['name']),
         ))
 
@@ -550,7 +555,7 @@ def project_add(remote_uri, project_name, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     projects = config['projects']
 
@@ -564,7 +569,7 @@ def project_add(remote_uri, project_name, verbose=False):
     # generate random ID
     m = hashlib.sha1()
     m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
-    project_id = m.hexdigest()
+    project_id = m.hexdigest()[-12:]
 
     project = {
         'id': project_id,
@@ -573,7 +578,7 @@ def project_add(remote_uri, project_name, verbose=False):
 
     projects[project_id] = project
     save_consensus_config(config)
-    print('{}'.format(project_id))
+    print('{} {}'.format(project_id, project_name))
 
 
 def project_remove(remote_uri, project_id, verbose=False):
@@ -581,17 +586,9 @@ def project_remove(remote_uri, project_id, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
-    username, address = uri.split('@')
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     projects = config['projects']
-
-    # convert short ID to long ID
-    if len(project_id) == 12:
-        for p_id in projects:
-            if p_id[-12:] == project_id:
-                project_id = p_id
-                break
 
     if project_id not in projects:
         msg = 'Project with id {} does not exists'.format(project_id)
@@ -617,8 +614,15 @@ def container_list(remote_uri, project_id, verbose=False):
 
     remote_config = load_consensus_config(remote_uri)
     container_items = remote_config.get('containers', {}).items()
-    container_items = [n for n in container_items if n[1]['project_id'].endswith(project_id)]
-    container_items = sorted(container_items, key=lambda n: n[1]['name'])
+    container_items = [
+        n
+        for n in container_items
+        if n[1]['project_id'].endswith(project_id)
+    ]
+    container_items = sorted(
+        container_items,
+        key=lambda n: (n[1]['name'], n[1]['host'], n[1]['ports']),
+    )
     
     print('{a: <12} {b: <10} {c: <15} {d: <33} {e: <6}'.format(
         a='CONTAINER_ID',
@@ -640,26 +644,24 @@ def container_list(remote_uri, project_id, verbose=False):
         )
 
         print('{a: <12} {b: <10} {c: <15} {d: <33} {e: <6}'.format(
-            a=container_id[-12:],
+            a=container_id,
             b=container['name'][:10],
-            c=container['address'],
+            c=container['host'],
             d=ports_str[:33],
             e=status,
         ))
 
 
-def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id, image, verbose=False):
-    # remote_uri
+def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id, image, start=False, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
     
-    # project id
     if not project_id:
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
@@ -668,13 +670,6 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
 
     # check if project id exists
     projects = config['projects']
-
-    # convert short ID to long ID
-    if len(project_id) == 12:
-        for p_id in projects:
-            if p_id[-12:] == project_id:
-                project_id = p_id
-                break
     
     if project_id not in projects:
         msg = 'Project with id {} does not exists'.format(project_id)
@@ -684,13 +679,13 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
     # generate random ID
     m = hashlib.sha1()
     m.update('{}'.format(random.randint(0, 2 ** 128)).encode())
-    container_id = m.hexdigest()
+    container_id = m.hexdigest()[-12:]
 
     # init container
     container = {
         'id': container_id,
         'project_id': project_id,
-        'address': remote_address,
+        'host': remote_host,
         'name': name,
         'distro': distro,
         'image_id': image_id,
@@ -706,7 +701,7 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
     container['ports'] = ports
     
     # create systemd-nspawn container on machine
-    uri = '{user}@{address}'.format(**machine)
+    uri = '{user}@{host}'.format(**machine)
     create_container(uri, container, verbose)
     containers[container_id] = container
     save_consensus_config(config)
@@ -714,7 +709,7 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
     # output on success
     print('{} {} {}'.format(
         container_id,
-        remote_address,
+        machine['host'],
         ','.join('{}:{}'.format(k, v) for k, v in ports.items())
     ))
 
@@ -728,7 +723,7 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    remote_username, remote_address, remote_port = parse_uri(remote_uri)
+    remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
@@ -739,26 +734,12 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
     # check if project id exists
     projects = config['projects']
 
-    # convert short ID to long ID
-    if len(project_id) == 12:
-        for p_id in projects:
-            if p_id[-12:] == project_id:
-                project_id = p_id
-                break
-
     if project_id not in projects:
         msg = 'Project with id {} does not exists'.format(project_id)
         print(msg, file=sys.stderr)
         sys.exit(1)
 
     project = projects[project_id]
-
-    # convert short ID to long ID
-    if len(container_id) == 12:
-        for c_id in containers:
-            if c_id[-12:] == container_id:
-                container_id = c_id
-                break
 
     if container_id not in containers:
         msg = 'Container with id {} does not exists'.format(container_id)
@@ -772,10 +753,14 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
     machine = machines[container['machine_id']]
 
     # create systemd-nspawn container on machine
-    uri = '{user}@{address}'.format(**machine)
+    uri = '{user}@{host}:{port}'.format(**machine)
     destory_container(uri, container, verbose)
     del containers[container_id]
     save_consensus_config(config)
+
+    # close ssh client
+    client.close()
+
     print('{}'.format(container_id))
 
 
@@ -793,12 +778,7 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = parse_uri(remote_uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    client = ssh_client(remote_uri)
 
     # start service
     # systemctl start systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
@@ -806,6 +786,9 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
+
+    # close ssh client
+    client.close()
 
 
 def container_stop(remote_uri, project_id, container_id, verbose=False):
@@ -822,12 +805,7 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = parse_uri(remote_uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    client = ssh_client(remote_uri)
 
     # stop service
     # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
@@ -835,6 +813,9 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
+
+    # close ssh client
+    client.close()
 
 
 def container_restart(remote_uri, project_id, container_id, verbose=False):
@@ -851,12 +832,7 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = parse_uri(remote_uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    client = ssh_client(remote_uri)
 
     # restart service
     # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
@@ -864,6 +840,9 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
+
+    # close ssh client
+    client.close()
 
 
 def container_migrate(remote_uri, project_id, container_id, verbose=False):
@@ -880,12 +859,7 @@ def container_migrate(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = parse_uri(remote_uri)
-    client = paramiko.client.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
-    client.load_host_keys(known_hosts_path)
-    client.connect(address, username=username)
+    client = ssh_client(remote_uri)
 
     raise NotImplementedError
 
@@ -910,7 +884,6 @@ if __name__ == '__main__':
 
     # machine add
     machine_add_parser = machine_subparsers.add_parser('add', help='Add machine')
-    machine_add_parser.add_argument('--id', '-I', help='Machine ID')
     machine_add_parser.add_argument('--address', '-a', help='[USER="root"@]HOST[:PORT=22]')
 
     # machine remove
@@ -949,6 +922,7 @@ if __name__ == '__main__':
     container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch, debian, fedora')
     container_add_parser.add_argument('--image-id', '-I', help='Image ID')
     container_add_parser.add_argument('--image', '-i', help='Image')
+    container_add_parser.add_argument('--start', '-s', action='store_true', help='Start container')
     container_add_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # container remove
@@ -1004,6 +978,7 @@ if __name__ == '__main__':
                 args.distro,
                 args.image_id,
                 args.image,
+                args.start,
                 args.verbose,
             )
         elif args.container_subparser == 'remove':
