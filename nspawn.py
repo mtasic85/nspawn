@@ -81,7 +81,7 @@ def ssh_client(uri):
     return client
 
 
-def create_container(uri, container, verbose=False):
+def create_container_arch_install(uri, container, start=False, verbose=False):
     # ssh client
     client = ssh_client(uri)
 
@@ -157,8 +157,6 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    # print('out: {!r}'.format(out))
-    # print('err: {!r}'.format(err))
 
     # patch sshd
     f = '#PermitEmptyPasswords no'
@@ -170,15 +168,7 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    # print('out: {!r}'.format(out))
-    # print('err: {!r}'.format(err))
 
-    # enable service
-    command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
-    if verbose: print('{!r}'.format(command))
-    stdin, stdout, stderr = client.exec_command(command)
-    stdin.close()
-    
     # override service
     command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
@@ -199,8 +189,6 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    # print('out: {!r}'.format(out))
-    # print('err: {!r}'.format(err))
 
     # demon-reload
     command = 'systemctl daemon-reload'
@@ -209,21 +197,29 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    # print('out: {!r}'.format(out))
-    # print('err: {!r}'.format(err))
 
-    # FIXME:
     # possibly run container
+    if start:
+        # start service
+        command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
+        if verbose: print('{!r}'.format(command))
+        stdin, stdout, stderr = client.exec_command(command)
+        stdin.close()
+
+        # enable service
+        command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
+        if verbose: print('{!r}'.format(command))
+        stdin, stdout, stderr = client.exec_command(command)
+        stdin.close()
 
     # close ssh client
     client.close()
 
 
-def destory_container(uri, container, verbose=False):
+def destroy_container_arch(uri, container, verbose=False):
     # ssh client
     client = ssh_client(uri)
 
-    # FIXME: should we stop here?
     # stop service
     command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
@@ -236,14 +232,74 @@ def destory_container(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
+    # rm service
+    command = 'rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
     # rm dir
     command = 'rm -r /var/lib/machines/{}'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
-    # rm service
-    command = 'rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
+    # close ssh client
+    client.close()
+
+
+def start_container_arch(uri, container, verbose=False):
+    # ssh client
+    client = ssh_client(uri)
+
+    # start service
+    command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # enable service
+    command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # close ssh client
+    client.close()
+
+
+def stop_container_arch(uri, container, verbose=False):
+    # ssh client
+    client = ssh_client(uri)
+
+    # stop service
+    command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # disable service
+    command = 'systemctl disable systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # close ssh client
+    client.close()
+
+
+def restart_container_arch(uri, container, verbose=False):
+    # ssh client
+    client = ssh_client(uri)
+
+    # start service
+    command = 'systemctl restart systemd-nspawn@{}.service'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # enable service
+    command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -258,15 +314,15 @@ def load_remote_config(uri, filename='nspawn.remote.conf'):
 
     command = 'cat "{}"'.format(filename)
     stdin, stdout, stderr = client.exec_command(command)
-    out = stdout.read()
-    err = stderr.read()
+    out = stdout.read().decode()
+    err = stderr.read().decode()
     stdin.close()    
     if err: raise IOError(err)
 
     # close ssh client
     client.close()
     
-    config = json.load(out)
+    config = json.loads(out)
     return config
 
 
@@ -274,7 +330,7 @@ def save_remote_config(uri, config, filename='nspawn.remote.conf'):
     # ssh client
     client = ssh_client(uri)
 
-    _config = shlex.quote(json.dumps(config))
+    _config = shlex.quote(json.dumps(config, indent=True))
     command = 'echo {} > "{}"'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
@@ -313,8 +369,6 @@ def merge_remote_configs(configs):
 
 
 def load_consensus_config(uri, filename='nspawn.remote.conf'):
-    configs = []
-
     try:
         config = load_remote_config(uri)
     except Exception as e:
@@ -327,9 +381,10 @@ def load_consensus_config(uri, filename='nspawn.remote.conf'):
         return config
 
     machines = config.get('machines', {})
+    configs = []
 
     for machine_id, machine in machines.items():
-        machine_uri = '{user}@{host}'.format(**machine)
+        machine_uri = '{user}@{host}:{port}'.format(**machine)
 
         try:
             config = load_remote_config(machine_uri)
@@ -364,7 +419,12 @@ def find_available_machine(config, container):
     machine_id = None
     b = False
 
-    for m_id, m in machines.items():
+    machines_items = sorted(
+        list(machines.items()),
+        key=lambda n: (n[1]['host'], n[1]['port'])
+    )
+
+    for m_id, m in machines_items:
         for c_id, c in containers.items():
             if c['name'] != container['name']:
                 machine_id = m_id
@@ -374,7 +434,7 @@ def find_available_machine(config, container):
         if b:
             break
     else:
-        m_id, m = list(machines.items())[0]
+        m_id, m = machines_items[0]
         machine_id = m_id
 
     machine = machines[machine_id]
@@ -637,7 +697,7 @@ def container_list(remote_uri, project_id, verbose=False):
         ))
 
 
-def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id, image, start=False, verbose=False):
+def container_add(remote_uri, project_id, name, ports_str, distro, image_id, image, start=False, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -684,10 +744,20 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
     # find available ports
     ports = find_available_machine_ports(config, machine, requested_ports)
     container['ports'] = ports
-    
+
     # create systemd-nspawn container on machine
-    uri = '{user}@{host}'.format(**machine)
-    create_container(uri, container, verbose)
+    uri = '{user}@{host}:{port}'.format(**machine)
+
+    if container['distro'] == 'arch':
+        if container['image_id']:
+            raise NotImplementedError
+        elif container['image']:
+            raise NotImplementedError
+        else:
+            create_container_arch_install(uri, container, start, verbose)
+    else:
+        raise NotImplementedError
+
     containers[container_id] = container
     save_consensus_config(config)
 
@@ -712,10 +782,6 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
-    # FIXME:
-    # check if container is running
-    # if yes, stop it first
-
     # check if project id exists
     projects = config['projects']
 
@@ -739,13 +805,19 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
 
     # create systemd-nspawn container on machine
     uri = '{user}@{host}:{port}'.format(**machine)
-    destory_container(uri, container, verbose)
+
+    if container['distro'] == 'arch':
+        if container['image_id']:
+            raise NotImplementedError
+        elif container['image']:
+            raise NotImplementedError
+        else:
+            destroy_container_arch(uri, container, verbose)
+    else:
+        raise NotImplementedError
+    
     del containers[container_id]
     save_consensus_config(config)
-
-    # close ssh client
-    client.close()
-
     print('{}'.format(container_id))
 
 
@@ -762,18 +834,10 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
     containers = config['containers']
     container = containers[container_id]
 
-    # ssh client
-    client = ssh_client(remote_uri)
-
-    # start service
-    # systemctl start systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
-    if verbose: print('{!r}'.format(command))
-    stdin, stdout, stderr = client.exec_command(command)
-    stdin.close()
-
-    # close ssh client
-    client.close()
+    if container['distro'] == 'arch':
+        start_container_arch(remote_uri, container, verbose)
+    else:
+        raise NotImplementedError
 
 
 def container_stop(remote_uri, project_id, container_id, verbose=False):
@@ -788,19 +852,11 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
     config = load_consensus_config(remote_uri)
     containers = config['containers']
     container = containers[container_id]
-
-    # ssh client
-    client = ssh_client(remote_uri)
-
-    # stop service
-    # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
-    if verbose: print('{!r}'.format(command))
-    stdin, stdout, stderr = client.exec_command(command)
-    stdin.close()
-
-    # close ssh client
-    client.close()
+    
+    if container['distro'] == 'arch':
+        stop_container_arch(remote_uri, container, verbose)
+    else:
+        raise NotImplementedError
 
 
 def container_restart(remote_uri, project_id, container_id, verbose=False):
@@ -815,19 +871,11 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
     config = load_consensus_config(remote_uri)
     containers = config['containers']
     container = containers[container_id]
-
-    # ssh client
-    client = ssh_client(remote_uri)
-
-    # restart service
-    # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
-    command = 'systemctl restart systemd-nspawn@{}.service'.format(container['id'])
-    if verbose: print('{!r}'.format(command))
-    stdin, stdout, stderr = client.exec_command(command)
-    stdin.close()
-
-    # close ssh client
-    client.close()
+    
+    if container['distro'] == 'arch':
+        restart_container_arch(remote_uri, container, verbose)
+    else:
+        raise NotImplementedError
 
 
 def container_migrate(remote_uri, project_id, container_id, verbose=False):
@@ -842,9 +890,6 @@ def container_migrate(remote_uri, project_id, container_id, verbose=False):
     config = load_consensus_config(remote_uri)
     containers = config['containers']
     container = containers[container_id]
-
-    # ssh client
-    client = ssh_client(remote_uri)
 
     raise NotImplementedError
 
@@ -888,7 +933,7 @@ if __name__ == '__main__':
     project_add_parser.add_argument('--name', '-n', help='Name')
 
     # project remove
-    project_remove_parser = project_subparsers.add_parser('project', help='Remove project')
+    project_remove_parser = project_subparsers.add_parser('remove', help='Remove project')
     project_remove_parser.add_argument('--id', '-I', help='Project ID')
 
     # container 
@@ -901,12 +946,11 @@ if __name__ == '__main__':
 
     # container add
     container_add_parser = container_subparsers.add_parser('add', help='Add container')
-    container_add_parser.add_argument('--address', '-a', default=None, help='[USER="root"@]HOST[:PORT=22]')
     container_add_parser.add_argument('--name', '-n', help='Human readable name of container')
-    container_add_parser.add_argument('--ports', '-p', help='MACHINE_PORT:CONTAINER_PORT[,M_PORT:C_PORT,...]')
+    container_add_parser.add_argument('--ports', '-p', default='22', help='MACHINE_PORT:CONTAINER_PORT[,M_PORT:C_PORT,...]')
     container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch, debian, fedora')
     container_add_parser.add_argument('--image-id', '-I', help='Image ID')
-    container_add_parser.add_argument('--image', '-i', help='Image')
+    container_add_parser.add_argument('--image', '-i', help='Image name')
     container_add_parser.add_argument('--start', '-s', action='store_true', help='Start container')
     container_add_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
@@ -957,7 +1001,6 @@ if __name__ == '__main__':
             container_add(
                 args.remote_address,
                 args.project_id,
-                args.address,
                 args.name,
                 args.ports,
                 args.distro,
