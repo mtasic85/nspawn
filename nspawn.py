@@ -8,7 +8,6 @@ import random
 import hashlib
 import argparse
 
-import yaml
 import paramiko
 
 
@@ -54,7 +53,7 @@ def load_local_config():
 
     if os.path.exists(filename):
         with open(filename, 'r') as f:
-            config = yaml.load(f)
+            config = json.load(f)
     else:
         config = {}
 
@@ -65,7 +64,7 @@ def save_local_config(config):
     filename = 'nspawn.local.conf'
 
     with open(filename, 'w') as f:
-        yaml.dump(config, f)
+        json.dump(config, f, indent=True)
 
 
 #
@@ -128,7 +127,6 @@ def create_container(uri, container, verbose=False):
         'echo "nameserver 8.8.8.8" > ',
         '{}/etc/resolv.conf'.format(machine_dir),
     ])
-
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -150,8 +148,6 @@ def create_container(uri, container, verbose=False):
     stdin.close()
 
     # patch sshd
-    # sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' \
-    #   /var/lib/machines/8747d5dd3f96c84f4160165ad2fc1ed33fa5209b/etc/ssh/sshd_config
     f = '#PermitRootLogin prohibit-password'
     t = 'PermitRootLogin yes'
     p = '{}/etc/ssh/sshd_config'.format(machine_dir)
@@ -161,12 +157,10 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    print('out: {!r}'.format(out))
-    print('err: {!r}'.format(err))
+    # print('out: {!r}'.format(out))
+    # print('err: {!r}'.format(err))
 
     # patch sshd
-    # sed -i 's/#PermitEmptyPasswords no/PermitEmptyPasswords yes/g' \
-    #   /var/lib/machines/8747d5dd3f96c84f4160165ad2fc1ed33fa5209b/etc/ssh/sshd_config
     f = '#PermitEmptyPasswords no'
     t = 'PermitEmptyPasswords yes'
     p = '{}/etc/ssh/sshd_config'.format(machine_dir)
@@ -176,28 +170,22 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    print('out: {!r}'.format(out))
-    print('err: {!r}'.format(err))
+    # print('out: {!r}'.format(out))
+    # print('err: {!r}'.format(err))
 
     # enable service
-    # systemctl restart systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
     command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
     
     # override service
-    # mkdir -p /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d
     command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # override service
-    # vim /etc/systemd/system/systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service.d/override.conf
-    # [Service]
-    # ExecStart=
-    # ExecStart=/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth --port=10022:22 --port=13306:3306 --machine=8747d5dd3f96c84f4160165ad2fc1ed33fa5209b
     command = 'printf "[Service]\\nExecStart=\\nExecStart={}" >{}'.format(
         '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
             ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
@@ -207,13 +195,12 @@ def create_container(uri, container, verbose=False):
     )
 
     if verbose: print('{!r}'.format(command))
-    print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    print('out: {!r}'.format(out))
-    print('err: {!r}'.format(err))
+    # print('out: {!r}'.format(out))
+    # print('err: {!r}'.format(err))
 
     # demon-reload
     command = 'systemctl daemon-reload'
@@ -222,8 +209,8 @@ def create_container(uri, container, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-    print('out: {!r}'.format(out))
-    print('err: {!r}'.format(err))
+    # print('out: {!r}'.format(out))
+    # print('err: {!r}'.format(err))
 
     # FIXME:
     # possibly run container
@@ -238,14 +225,12 @@ def destory_container(uri, container, verbose=False):
 
     # FIXME: should we stop here?
     # stop service
-    # systemctl stop systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
     command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
     # disable service
-    # systemctl disable systemd-nspawn@8747d5dd3f96c84f4160165ad2fc1ed33fa5209b.service
     command = 'systemctl disable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
@@ -267,7 +252,7 @@ def destory_container(uri, container, verbose=False):
     client.close()
 
 
-def load_remote_config(uri, filename='nspawn.yaml'):
+def load_remote_config(uri, filename='nspawn.remote.conf'):
     # ssh client
     client = ssh_client(uri)
 
@@ -281,15 +266,15 @@ def load_remote_config(uri, filename='nspawn.yaml'):
     # close ssh client
     client.close()
     
-    config = yaml.load(out)
+    config = json.load(out)
     return config
 
 
-def save_remote_config(uri, config, filename='nspawn.yaml'):
+def save_remote_config(uri, config, filename='nspawn.remote.conf'):
     # ssh client
     client = ssh_client(uri)
 
-    _config = shlex.quote(yaml.dump(config))
+    _config = shlex.quote(json.dumps(config))
     command = 'echo {} > "{}"'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
