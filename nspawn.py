@@ -36,7 +36,8 @@ def parse_ports(ports_str):
 
     for n in ports_str.split(','):
         if ':' in n:
-            src_port, dest_port = map(int, n.split(':'))
+            src_port, dest_port = n.split(':')
+            src_port, dest_port = int(src_port), int(dest_port)
         else:
             src_port, dest_port = None, int(n)
 
@@ -111,7 +112,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
 
     # boostrap container
     machine_dir = '/var/lib/machines/{id}'.format(**container)
-    command = 'pacstrap -c -d "{}" base vim openssh'.format(machine_dir)
+    command = 'pacstrap -c -d "{}" base --ignore linux vim openssh'.format(machine_dir)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
@@ -402,7 +403,7 @@ def save_consensus_config(config, filename='nspawn.remote.conf'):
     
     for machine_id, machine in machines.items():
         try:
-            machine_uri = '{user}@{host}'.format(**machine)
+            machine_uri = '{user}@{host}:{port}'.format(**machine)
             save_remote_config(machine_uri, config)
         except Exception as e:
             err = 'Error saving config on {} with machine id {}.'.format(
@@ -416,42 +417,27 @@ def save_consensus_config(config, filename='nspawn.remote.conf'):
 def find_available_machine(config, container):
     machines = config['machines']
     containers = config['containers']
-    machine_id = None
-    b = False
-
-    machines_items = sorted(
-        list(machines.items()),
-        key=lambda n: (n[1]['host'], n[1]['port'])
-    )
-
-    for m_id, m in machines_items:
-        for c_id, c in containers.items():
-            if c['name'] != container['name']:
-                machine_id = m_id
-                b = True
-                break
-
-        if b:
-            break
+    
+    if containers:
+        machine = random.choice(list(machines.values()))
     else:
-        m_id, m = machines_items[0]
-        machine_id = m_id
+        machine = list(machines.values())[0]
 
-    machine = machines[machine_id]
     return machine
 
 
 def find_available_machine_port(config, machine, dest_port):
     containers = {
-        n: m
-        for n, m in config['containers'].items()
-        if m['machine_id'] == machine['id']
+        c_id: c
+        for c_id, c in config['containers'].items()
+        if c['machine_id'] == machine['id']
     }
 
     containers_ports_map = {}
 
     for container_id, container in containers.items():
         for c_src_port, c_dest_port in container['ports'].items():
+            c_src_port = int(c_src_port)
             containers_ports_map[c_src_port] = c_dest_port
 
     port = dest_port
@@ -465,13 +451,14 @@ def find_available_machine_port(config, machine, dest_port):
     return port
 
 
-def find_available_machine_ports(config, machine, ports):
+def find_available_machine_ports(config, machine, requested_ports):
     available_ports_map = {}
 
-    for src_port, dest_port in ports:
+    for src_port, dest_port in requested_ports:
         if not src_port:
             src_port = find_available_machine_port(config, machine, dest_port)
 
+        src_port = int(src_port)
         available_ports_map[src_port] = dest_port
 
     return available_ports_map
@@ -730,7 +717,6 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
     container = {
         'id': container_id,
         'project_id': project_id,
-        'host': remote_host,
         'name': name,
         'distro': distro,
         'image_id': image_id,
@@ -740,13 +726,14 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
     # find suitable machine where to host container
     machine = find_available_machine(config, container)
     container['machine_id'] = machine['id']
+    container['host'] = machine['host']
 
     # find available ports
     ports = find_available_machine_ports(config, machine, requested_ports)
     container['ports'] = ports
 
     # create systemd-nspawn container on machine
-    uri = '{user}@{host}:{port}'.format(**machine)
+    machine_uri = '{user}@{host}:{port}'.format(**machine)
 
     if container['distro'] == 'arch':
         if container['image_id']:
@@ -754,7 +741,7 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
         elif container['image']:
             raise NotImplementedError
         else:
-            create_container_arch_install(uri, container, start, verbose)
+            create_container_arch_install(machine_uri, container, start, verbose)
     else:
         raise NotImplementedError
 
