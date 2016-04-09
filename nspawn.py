@@ -15,7 +15,7 @@ import paramiko
 #
 # util
 #
-def convert_uri_to_user_host_port(uri):
+def parse_uri(uri):
     if '@' in uri:
         user, address = uri.split('@')
     else:
@@ -72,7 +72,7 @@ def save_local_config(config):
 # remote
 #
 def create_container(uri, container, verbose=False):
-    username, address = uri.split('@')
+    username, address, port = parse_uri(uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -223,7 +223,7 @@ def create_container(uri, container, verbose=False):
 
 
 def destory_container(uri, container, verbose=False):
-    username, address = uri.split('@')
+    username, address, port = parse_uri(uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -259,7 +259,7 @@ def destory_container(uri, container, verbose=False):
 
 
 def load_remote_config(uri, filename='nspawn.yaml'):
-    username, address = uri.split('@')
+    username, address, port = parse_uri(uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -279,7 +279,7 @@ def load_remote_config(uri, filename='nspawn.yaml'):
 
 
 def save_remote_config(uri, config, filename='nspawn.yaml'):
-    username, address = uri.split('@')
+    username, address, port = parse_uri(uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -470,8 +470,8 @@ def machine_add(remote_uri, uri, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address = remote_uri.split('@')
-    username, address = uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
+    username, address, port = parse_uri(uri)
     config = load_consensus_config(remote_uri)
     machines = config['machines']
 
@@ -503,8 +503,7 @@ def machine_remove(remote_uri, machine_id, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address = remote_uri.split('@')
-    username, address = uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     machines = config['machines']
 
@@ -551,7 +550,7 @@ def project_add(remote_uri, project_name, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address = remote_uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     projects = config['projects']
 
@@ -582,7 +581,7 @@ def project_remove(remote_uri, project_id, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_username, remote_address = remote_uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
     username, address = uri.split('@')
     config = load_consensus_config(remote_uri)
     projects = config['projects']
@@ -660,7 +659,7 @@ def container_add(remote_uri, project_id, uri, name, ports_str, distro, image_id
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    remote_username, remote_address = remote_uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
@@ -729,7 +728,7 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    remote_username, remote_address = remote_uri.split('@')
+    remote_username, remote_address, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri)
     containers = config['containers']
 
@@ -794,7 +793,7 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    username, address, port = parse_uri(remote_uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -823,7 +822,7 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    username, address, port = parse_uri(remote_uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -852,7 +851,7 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    username, address, port = parse_uri(remote_uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
@@ -881,7 +880,7 @@ def container_migrate(remote_uri, project_id, container_id, verbose=False):
     container = containers[container_id]
 
     # ssh client
-    username, address, port = convert_uri_to_user_host_port(remote_uri)
+    username, address, port = parse_uri(remote_uri)
     client = paramiko.client.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     known_hosts_path = os.path.expanduser('~/.ssh/known_hosts')
