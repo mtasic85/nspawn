@@ -390,7 +390,13 @@ def load_consensus_config(uri, filename='nspawn.remote.conf'):
         try:
             config = load_remote_config(machine_uri)
         except Exception as e:
-            continue
+            print('Error: Could not load remote config from machine.')
+            answer = input('Should continue without this machine\'s remote config? [y/n]: ')
+
+            if answer == 'n':
+                sys.exit(-1)
+            elif answer == 'y':
+                continue
 
         configs.append(config)
 
@@ -421,7 +427,8 @@ def find_available_machine(config, container):
     if containers:
         machine = random.choice(list(machines.values()))
     else:
-        machine = list(machines.values())[0]
+        machines_values = sorted(machines.values(), key=lambda n: n['host'])
+        machine = machines_values[0]
 
     return machine
 
