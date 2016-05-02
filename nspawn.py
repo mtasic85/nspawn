@@ -276,6 +276,33 @@ def start_container_arch(uri, container, verbose=False):
     # ssh client
     client = ssh_client(uri)
 
+    # override service
+    command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # override service
+    command = 'printf "[Service]\\nExecStart=\\nExecStart={}" >{}'.format(
+        '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
+            ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
+            container['id'],
+        ),
+        '/etc/systemd/system/systemd-nspawn\@{}.service.d/override.conf'.format(
+            container['id']
+        )
+    )
+
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
+    # demon-reload
+    command = 'systemctl daemon-reload'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+    
     # start service
     command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
@@ -295,6 +322,14 @@ def start_container_arch(uri, container, verbose=False):
 def stop_container_arch(uri, container, verbose=False):
     # ssh client
     client = ssh_client(uri)
+
+    # demon-reload
+    command = 'systemctl daemon-reload'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
 
     # stop service
     command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
@@ -799,7 +834,12 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
 
     # create systemd-nspawn container on machine
     machine_uri = '{user}@{host}:{port}'.format(**machine)
+    containers[container_id] = container
 
+    # save not yet bootstrapped container
+    save_consensus_config(config, verbose=verbose)
+
+    # bootstrap distro
     if container['distro'] == 'arch':
         if container['image_id']:
             raise NotImplementedError
@@ -809,9 +849,6 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
             create_container_arch_install(machine_uri, container, start, verbose)
     else:
         raise NotImplementedError
-
-    containers[container_id] = container
-    save_consensus_config(config, verbose=verbose)
 
     # output on success
     print('{} {} {}'.format(
