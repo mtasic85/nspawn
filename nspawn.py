@@ -147,6 +147,13 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     stdin.close()
 
+    s = '/usr/lib/systemd/system/systemd-networkd.socket.'
+    d = '/etc/systemd/system/sockets.target.wants/systemd-networkd.socket'
+    command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
     # enable sshd
     s = '/usr/lib/systemd/system/sshd.service'
     d = '/etc/systemd/system/multi-user.target.wants/sshd.service'
@@ -1000,7 +1007,7 @@ if __name__ == '__main__':
     container_add_parser = container_subparsers.add_parser('add', help='Add container')
     container_add_parser.add_argument('--name', '-n', help='Human readable name of container')
     container_add_parser.add_argument('--ports', '-p', default='22', help='MACHINE_PORT:CONTAINER_PORT[,M_PORT:C_PORT,...]')
-    container_add_parser.add_argument('--distro', '-d', default='arch', help='[UNSUPPORTED] Linux distribution: arch, debian, fedora')
+    container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch (UNSUPPORTED but planned: debian, fedora)')
     container_add_parser.add_argument('--image-id', '-I', help='[UNSUPPORTED] Image ID')
     container_add_parser.add_argument('--image', '-i', help='[UNSUPPORTED] Image name')
     container_add_parser.add_argument('--start', '-s', action='store_true', help='Start container')
@@ -1071,10 +1078,10 @@ if __name__ == '__main__':
                 args.verbose,
             )
         elif args.container_subparser == 'start':
-            container_start(args.remote_address, args.project_id, args.id)
+            container_start(args.remote_address, args.project_id, args.id, args.verbose)
         elif args.container_subparser == 'stop':
-            container_stop(args.remote_address, args.project_id, args.id)
+            container_stop(args.remote_address, args.project_id, args.id, args.verbose)
         elif args.container_subparser == 'restart':
-            container_restart(args.remote_address, args.project_id, args.id)
+            container_restart(args.remote_address, args.project_id, args.id, args.verbose)
         elif args.container_subparser == 'migrate':
-            container_migrate(args.remote_address, args.project_id, args.id)
+            container_migrate(args.remote_address, args.project_id, args.id, args.verbose)
