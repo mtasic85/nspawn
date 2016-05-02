@@ -184,6 +184,15 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     err = stderr.read()
     stdin.close()
 
+    # remove /etc/securetty
+    # to allow 'machinectl login ....'
+    s = '/etc/securetty'
+    d = '/etc/securetty.0'
+    command = 'mv "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    stdin.close()
+
     # override service
     command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
