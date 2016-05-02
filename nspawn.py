@@ -651,6 +651,12 @@ def machine_remove(remote_uri, machine_id, verbose=False):
     config = load_consensus_config(remote_uri, verbose=verbose)
     machines = config['machines']
 
+    # make sure user wants to delete machine
+    answer = input('Are you sure you want to remove machine? [y/n]: ')
+
+    if answer != 'y':
+        sys.exit(-1)
+
     if machine_id not in machines:
         msg = 'Machine with id {} does not exists'.format(machine_id)
         print(msg, file=sys.stderr)
@@ -721,6 +727,12 @@ def project_remove(remote_uri, project_id, verbose=False):
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri, verbose=verbose)
     projects = config['projects']
+
+    # make sure user wants to delete project
+    answer = input('Are you sure you want to remove project? [y/n]: ')
+
+    if answer != 'y':
+        sys.exit(-1)
 
     if project_id not in projects:
         msg = 'Project with id {} does not exists'.format(project_id)
