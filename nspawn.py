@@ -97,6 +97,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'mkdir -p "/var/lib/machines/{id}"'.format(**container)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
     err = stderr.read()
     stdin.close()
     
@@ -109,6 +110,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
         if verbose: print('{!r}'.format(command))
         stdin, stdout, stderr = client.exec_command(command)
         out = stdout.read()
+        err = stderr.read()
         stdin.close()
 
         if out != '/var/lib/pacman/db.lck':
@@ -122,6 +124,8 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'pacstrap -c -d "{}" base --ignore linux vim openssh'.format(machine_dir)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
     
     if verbose:
@@ -137,6 +141,8 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     ])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # enable systemd-network
@@ -145,6 +151,8 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     s = '/usr/lib/systemd/system/systemd-networkd.socket.'
@@ -152,6 +160,8 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # enable sshd
@@ -160,6 +170,8 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # patch sshd
@@ -191,12 +203,16 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     command = 'mv "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # override service
     command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # override service
@@ -228,13 +244,25 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
         command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
         if verbose: print('{!r}'.format(command))
         stdin, stdout, stderr = client.exec_command(command)
+        out = stdout.read()
+        err = stderr.read()
         stdin.close()
 
         # enable service
         command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
         if verbose: print('{!r}'.format(command))
         stdin, stdout, stderr = client.exec_command(command)
+        out = stdout.read()
+        err = stderr.read()
         stdin.close()
+
+    # sync
+    command = 'sync'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
 
     # close ssh client
     client.close()
@@ -248,24 +276,40 @@ def destroy_container_arch(uri, container, verbose=False):
     command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # disable service
     command = 'systemctl disable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # rm service
     command = 'rm -r /etc/systemd/system/systemd-nspawn@{}.service.d'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # rm dir
     command = 'rm -r /var/lib/machines/{}'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
+    # sync
+    command = 'sync'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # close ssh client
@@ -273,6 +317,9 @@ def destroy_container_arch(uri, container, verbose=False):
 
 
 def start_container_arch(uri, container, verbose=False):
+    if verbose:
+        print('start_container_arch: {}'.format(uri))
+
     # ssh client
     client = ssh_client(uri)
 
@@ -280,10 +327,14 @@ def start_container_arch(uri, container, verbose=False):
     command = 'mkdir -p "/etc/systemd/system/systemd-nspawn@{}.service.d"'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # override service
-    command = 'printf "[Service]\\nExecStart=\\nExecStart={}" >{}'.format(
+    command = 'printf "[Service]\\nExecStart=\\nExecStart={}\\nRestart=on-failure" >{}'.format(
         '/usr/bin/systemd-nspawn --quiet --keep-unit --boot --network-veth {} --machine={}'.format(
             ' '.join('--port={}:{}'.format(k, v) for k, v in container['ports'].items()),
             container['id'],
@@ -295,24 +346,48 @@ def start_container_arch(uri, container, verbose=False):
 
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # demon-reload
     command = 'systemctl daemon-reload'
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
     
     # start service
     command = 'systemctl start systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # enable service
     command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
+    stdin.close()
+
+    # sync
+    command = 'sync'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # close ssh client
@@ -320,6 +395,9 @@ def start_container_arch(uri, container, verbose=False):
 
 
 def stop_container_arch(uri, container, verbose=False):
+    if verbose:
+        print('stop_container_arch: {}'.format(uri))
+
     # ssh client
     client = ssh_client(uri)
 
@@ -329,18 +407,36 @@ def stop_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # stop service
     command = 'systemctl stop systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # disable service
     command = 'systemctl disable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
+    stdin.close()
+
+    # sync
+    command = 'sync'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # close ssh client
@@ -348,6 +444,9 @@ def stop_container_arch(uri, container, verbose=False):
 
 
 def restart_container_arch(uri, container, verbose=False):
+    if verbose:
+        print('restart_container_arch: {}'.format(uri))
+
     # ssh client
     client = ssh_client(uri)
 
@@ -355,12 +454,28 @@ def restart_container_arch(uri, container, verbose=False):
     command = 'systemctl restart systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # enable service
     command = 'systemctl enable systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    # if verbose: print('stdout: {!r}'.format(out))
+    # if verbose: print('stderr: {!r}'.format(err))
+    stdin.close()
+
+    # sync
+    command = 'sync'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
     stdin.close()
 
     # close ssh client
@@ -955,10 +1070,14 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
 
     config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
     container = containers[container_id]
+    machine_id = container['machine_id']
+    machine = machines[machine_id]
+    machine_uri = '{user}@{host}:{port}'.format(**machine)
 
     if container['distro'] == 'arch':
-        start_container_arch(remote_uri, container, verbose)
+        start_container_arch(machine_uri, container, verbose=verbose)
     else:
         raise NotImplementedError
 
@@ -974,10 +1093,14 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
 
     config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
     container = containers[container_id]
+    machine_id = container['machine_id']
+    machine = machines[machine_id]
+    machine_uri = '{user}@{host}:{port}'.format(**machine)
     
     if container['distro'] == 'arch':
-        stop_container_arch(remote_uri, container, verbose)
+        stop_container_arch(machine_uri, container, verbose=verbose)
     else:
         raise NotImplementedError
 
@@ -993,10 +1116,14 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
 
     config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
     container = containers[container_id]
+    machine_id = container['machine_id']
+    machine = machines[machine_id]
+    machine_uri = '{user}@{host}:{port}'.format(**machine)
     
     if container['distro'] == 'arch':
-        restart_container_arch(remote_uri, container, verbose)
+        restart_container_arch(machine_uri, container, verbose=verbose)
     else:
         raise NotImplementedError
 
@@ -1012,7 +1139,13 @@ def container_migrate(remote_uri, project_id, container_id, verbose=False):
 
     config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
     container = containers[container_id]
+    machine_id = container['machine_id']
+    machine = machines[machine_id]
+    machine_uri = '{user}@{host}:{port}'.format(**machine)
+    
+    # FIXME: implement
 
     raise NotImplementedError
 
