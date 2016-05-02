@@ -16,6 +16,11 @@ import paramiko
 #
 # util
 #
+def rebuild_uri(uri):
+    user, host, port = parse_uri(uri)
+    return '{}@{}:{}'.format(user, host, port)
+
+
 def parse_uri(uri):
     if '@' in uri:
         user, host = uri.split('@')
@@ -311,7 +316,12 @@ def restart_container_arch(uri, container, verbose=False):
     client.close()
 
 
-def load_remote_config(uri, filename='nspawn.remote.conf'):
+def load_remote_config(uri, filename='nspawn.remote.conf', verbose=False):
+    uri = rebuild_uri(uri)
+
+    if verbose:
+        print('load_remote_config: {}'.format(uri))
+
     # ssh client
     client = ssh_client(uri)
 
@@ -322,8 +332,7 @@ def load_remote_config(uri, filename='nspawn.remote.conf'):
     stdin.close()    
     
     if err:
-        if verbose:
-            print('WARNING: {!r}'.format(err))
+        raise IOError(err)
 
     # close ssh client
     client.close()
@@ -332,38 +341,24 @@ def load_remote_config(uri, filename='nspawn.remote.conf'):
     return config
 
 
-def save_remote_config(uri, config, filename='nspawn.remote.conf'):
+def save_remote_config(uri, config, filename='nspawn.remote.conf', verbose=False):
+    uri = rebuild_uri(uri)
+    
+    if verbose:
+        print('save_remote_config: {}'.format(uri))
+
     # ssh client
     client = ssh_client(uri)
 
-    # load first previous remote config
-    command = 'cat "{}"'.format(filename)
-    stdin, stdout, stderr = client.exec_command(command)
-    out = stdout.read().decode()
-    err = stderr.read().decode()
-    stdin.close()
-
-    if err:
-        if verbose:
-            print('WARNING: {!r}'.format(err))
-        
-        prev_config = {}
-    else:
-        prev_config = json.loads(out)
-
-    # merge previous config with current
-    new_config = self.merge_remote_configs([prev_config, config])
-
     # save remote config
-    _config = shlex.quote(json.dumps(new_config, indent=True))
+    _config = shlex.quote(json.dumps(config, indent=True))
     command = 'echo {} > "{}"'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
     stdin.close()
     
     if err:
-        if verbose:
-            print('WARNING: {!r}'.format(err))
+        raise IOError(err)
 
     # close ssh client
     client.close()
@@ -396,11 +391,11 @@ def merge_remote_configs(configs):
     return config
 
 
-def load_consensus_config(uri, filename='nspawn.remote.conf'):
+def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
     # load remote config of boostrap/main node
     try:
-        config = load_remote_config(uri)
-    except Exception as e:
+        config = load_remote_config(uri, verbose=verbose)
+    except IOError as e:
         print('ERROR: Could not load remote config.')
         sys.exit(-1)
 
@@ -412,11 +407,14 @@ def load_consensus_config(uri, filename='nspawn.remote.conf'):
         machine_uri = '{user}@{host}:{port}'.format(**machine)
 
         try:
-            config = load_remote_config(machine_uri)
-        except Exception as e:
+            config = load_remote_config(machine_uri, verbose=verbose)
+        except IOError as e:
             err = 'ERROR: Could not load remote config from {}'.format(
                 machine_uri,
             )
+
+            if verbose:
+                print('ERROR: {!r}'.format(e), file=sys.stderr)
 
             print(err, file=sys.stderr)
             answer = input('Skip? [y/n]: ')
@@ -430,18 +428,21 @@ def load_consensus_config(uri, filename='nspawn.remote.conf'):
     return config
 
 
-def save_consensus_config(config, filename='nspawn.remote.conf'):
+def save_consensus_config(config, filename='nspawn.remote.conf', verbose=False):
     machines = config.get('machines', {})
     
     for machine_id, machine in machines.items():
         machine_uri = '{user}@{host}:{port}'.format(**machine)
 
         try:    
-            save_remote_config(machine_uri, config)
-        except Exception as e:
+            save_remote_config(machine_uri, config, verbose=verbose)
+        except IOError as e:
             err = 'ERROR: Could not save remote config on {}'.format(
                 machine_uri,
             )
+
+            if verbose:
+                print('ERROR: {!r}'.format(e), file=sys.stderr)
 
             print(err, file=sys.stderr)
             answer = input('Skip? [y/n]: ')
@@ -456,9 +457,12 @@ def find_available_machine(config, container):
     
     if containers:
         # find least occupied machine
-        machine_ids = [c.machine_id for c in containers.values()]
-        counter = Counter(machine_ids)
-        machine_id = counter.most_common()[-1]
+        counter = Counter()
+        machines_ids = machines.keys()
+        counter.update(machines_ids)
+        machines_ids = [c['machine_id'] for c in containers.values()]
+        counter.update(machines_ids)
+        machine_id = counter.most_common()[-1][0]
         machine = machines[machine_id]
     else:
         # from sorted list of machines by host pick first
@@ -534,7 +538,7 @@ def machine_list(remote_uri, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_config = load_consensus_config(remote_uri)
+    remote_config = load_consensus_config(remote_uri, verbose=verbose)
     machine_items = remote_config.get('machines', {}).items()
     machine_items = sorted(
         list(machine_items),
@@ -560,7 +564,7 @@ def machine_add(remote_uri, uri, verbose=False):
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
     user, host, port = parse_uri(uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     machines = config['machines']
 
     # check if host already exists
@@ -583,7 +587,7 @@ def machine_add(remote_uri, uri, verbose=False):
     }
 
     machines[machine_id] = machine
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
     print('{} {}@{}:{}'.format(machine_id, user, host, port))
 
 
@@ -593,7 +597,7 @@ def machine_remove(remote_uri, machine_id, verbose=False):
         remote_uri = local_config['main']['remote_address']
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     machines = config['machines']
 
     if machine_id not in machines:
@@ -602,7 +606,7 @@ def machine_remove(remote_uri, machine_id, verbose=False):
         sys.exit(1)
 
     del machines[machine_id]
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
     print('{}'.format(machine_id))
 
 
@@ -614,7 +618,7 @@ def project_list(remote_uri, verbose=False):
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
 
-    remote_config = load_consensus_config(remote_uri)
+    remote_config = load_consensus_config(remote_uri, verbose=verbose)
     project_items = remote_config.get('projects', {}).items()
     project_items = list(project_items)
     project_items = sorted(project_items, key=lambda n: n[1]['name'])
@@ -633,7 +637,7 @@ def project_add(remote_uri, project_name, verbose=False):
         remote_uri = local_config['main']['remote_address']
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     projects = config['projects']
 
     # check if project name already exists
@@ -654,7 +658,7 @@ def project_add(remote_uri, project_name, verbose=False):
     }
 
     projects[project_id] = project
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
     print('{} {}'.format(project_id, project_name))
 
 
@@ -664,7 +668,7 @@ def project_remove(remote_uri, project_id, verbose=False):
         remote_uri = local_config['main']['remote_address']
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     projects = config['projects']
 
     if project_id not in projects:
@@ -673,7 +677,7 @@ def project_remove(remote_uri, project_id, verbose=False):
         sys.exit(1)
 
     del projects[project_id]
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
     print('{}'.format(project_id))
 
 
@@ -689,7 +693,7 @@ def container_list(remote_uri, project_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    remote_config = load_consensus_config(remote_uri)
+    remote_config = load_consensus_config(remote_uri, verbose=verbose)
     container_items = remote_config.get('containers', {}).items()
     container_items = [
         n
@@ -739,7 +743,7 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
         project_id = local_config['main']['project_id']
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
 
     # parse ports
@@ -791,7 +795,7 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
         raise NotImplementedError
 
     containers[container_id] = container
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
 
     # output on success
     print('{} {} {}'.format(
@@ -801,7 +805,7 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
     ))
 
 
-def container_remove(remote_uri, project_id, container_id, verbose=False):
+def container_remove(remote_uri, project_id, container_id, force=False, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -811,8 +815,24 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
         project_id = local_config['main']['project_id']
 
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
+
+    if force:
+        # try to remove container on each machine
+        for machine_id, machine in machines.items():
+            uri = '{user}@{host}:{port}'.format(**machine)
+            
+            container = {
+                'id': container_id,
+                'project_id': project_id,
+                'machine_id': machine_id,
+            }
+
+            destroy_container_arch(uri, container, verbose=verbose)
+
+        return
 
     # check if project id exists
     projects = config['projects']
@@ -820,20 +840,20 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
     if project_id not in projects:
         msg = 'Project with id {} does not exists'.format(project_id)
         print(msg, file=sys.stderr)
-        sys.exit(1)
+        sys.exit(-1)
 
     project = projects[project_id]
 
     if container_id not in containers:
         msg = 'Container with id {} does not exists'.format(container_id)
         print(msg, file=sys.stderr)
-        sys.exit(1)
+        sys.exit(-1)
 
     container = containers[container_id]
 
     # machine
-    machines = config['machines']
-    machine = machines[container['machine_id']]
+    machine_id = container['machine_id']
+    machine = machines[machine_id]
 
     # create systemd-nspawn container on machine
     uri = '{user}@{host}:{port}'.format(**machine)
@@ -849,7 +869,7 @@ def container_remove(remote_uri, project_id, container_id, verbose=False):
         raise NotImplementedError
     
     del containers[container_id]
-    save_consensus_config(config)
+    save_consensus_config(config, verbose=verbose)
     print('{}'.format(container_id))
 
 
@@ -862,7 +882,7 @@ def container_start(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
     container = containers[container_id]
 
@@ -881,7 +901,7 @@ def container_stop(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
     container = containers[container_id]
     
@@ -900,7 +920,7 @@ def container_restart(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
     container = containers[container_id]
     
@@ -919,7 +939,7 @@ def container_migrate(remote_uri, project_id, container_id, verbose=False):
         local_config = load_local_config()
         project_id = local_config['main']['project_id']
 
-    config = load_consensus_config(remote_uri)
+    config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
     container = containers[container_id]
 
@@ -980,15 +1000,16 @@ if __name__ == '__main__':
     container_add_parser = container_subparsers.add_parser('add', help='Add container')
     container_add_parser.add_argument('--name', '-n', help='Human readable name of container')
     container_add_parser.add_argument('--ports', '-p', default='22', help='MACHINE_PORT:CONTAINER_PORT[,M_PORT:C_PORT,...]')
-    container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch, debian, fedora')
-    container_add_parser.add_argument('--image-id', '-I', help='Image ID')
-    container_add_parser.add_argument('--image', '-i', help='Image name')
+    container_add_parser.add_argument('--distro', '-d', default='arch', help='[UNSUPPORTED] Linux distribution: arch, debian, fedora')
+    container_add_parser.add_argument('--image-id', '-I', help='[UNSUPPORTED] Image ID')
+    container_add_parser.add_argument('--image', '-i', help='[UNSUPPORTED] Image name')
     container_add_parser.add_argument('--start', '-s', action='store_true', help='Start container')
     container_add_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # container remove
     container_remove_parser = container_subparsers.add_parser('remove', help='Remove container')
     container_remove_parser.add_argument('--id', '-I', help='Container ID')
+    container_remove_parser.add_argument('--force', '-f', action='store_true', help='Force')
     container_remove_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
     # container start
@@ -1046,6 +1067,7 @@ if __name__ == '__main__':
                 args.remote_address,
                 args.project_id,
                 args.id,
+                args.force,
                 args.verbose,
             )
         elif args.container_subparser == 'start':
