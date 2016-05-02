@@ -145,7 +145,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     err = stderr.read()
     stdin.close()
 
-    # enable systemd-network
+    # enable systemd-network.service
     s = '/usr/lib/systemd/system/systemd-networkd.service'
     d = '/etc/systemd/system/multi-user.target.wants/systemd-networkd.service'
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
@@ -155,8 +155,19 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     err = stderr.read()
     stdin.close()
 
-    s = '/usr/lib/systemd/system/systemd-networkd.socket.'
+    # systemd-networkd.socket
+    s = '/usr/lib/systemd/system/systemd-networkd.socket'
     d = '/etc/systemd/system/sockets.target.wants/systemd-networkd.socket'
+    command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
+    # systemd-resolved.service
+    s = '/usr/lib/systemd/system/systemd-resolved.service'
+    d = '/etc/systemd/system/sockets.target.wants/systemd-resolved.service'
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
@@ -329,8 +340,6 @@ def start_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # override service
@@ -348,8 +357,6 @@ def start_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # demon-reload
@@ -358,8 +365,6 @@ def start_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
     
     # start service
@@ -368,8 +373,6 @@ def start_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # enable service
@@ -378,8 +381,6 @@ def start_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # sync
