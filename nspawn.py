@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from collections import Counter
+
 import os
 import sys
 import json
@@ -395,17 +397,14 @@ def merge_remote_configs(configs):
 
 
 def load_consensus_config(uri, filename='nspawn.remote.conf'):
+    # load remote config of boostrap/main node
     try:
         config = load_remote_config(uri)
     except Exception as e:
-        config = {
-            'machines': {},
-            'projects': {},
-            'containers': {},
-        }
+        print('ERROR: Could not load remote config.')
+        sys.exit(-1)
 
-        return config
-
+    # get all remote configs and merge them
     machines = config.get('machines', {})
     configs = []
 
@@ -415,13 +414,15 @@ def load_consensus_config(uri, filename='nspawn.remote.conf'):
         try:
             config = load_remote_config(machine_uri)
         except Exception as e:
-            print('Error: Could not load remote config from machine.')
-            answer = input('Should continue without this machine\'s remote config? [y/n]: ')
+            err = 'ERROR: Could not load remote config from {}'.format(
+                machine_uri,
+            )
+
+            print(err, file=sys.stderr)
+            answer = input('Skip? [y/n]: ')
 
             if answer == 'n':
                 sys.exit(-1)
-            elif answer == 'y':
-                continue
 
         configs.append(config)
 
@@ -433,16 +434,20 @@ def save_consensus_config(config, filename='nspawn.remote.conf'):
     machines = config.get('machines', {})
     
     for machine_id, machine in machines.items():
-        try:
-            machine_uri = '{user}@{host}:{port}'.format(**machine)
+        machine_uri = '{user}@{host}:{port}'.format(**machine)
+
+        try:    
             save_remote_config(machine_uri, config)
         except Exception as e:
-            err = 'Error saving config on {} with machine id {}.'.format(
-                machine['host'],
-                machine_id,
+            err = 'ERROR: Could not save remote config on {}'.format(
+                machine_uri,
             )
 
             print(err, file=sys.stderr)
+            answer = input('Skip? [y/n]: ')
+
+            if answer == 'n':
+                sys.exit(-1)
 
 
 def find_available_machine(config, container):
@@ -450,8 +455,13 @@ def find_available_machine(config, container):
     containers = config['containers']
     
     if containers:
-        machine = random.choice(list(machines.values()))
+        # find least occupied machine
+        machine_ids = [c.machine_id for c in containers.values()]
+        counter = Counter(machine_ids)
+        machine_id = counter.most_common()[-1]
+        machine = machines[machine_id]
     else:
+        # from sorted list of machines by host pick first
         machines_values = sorted(machines.values(), key=lambda n: n['host'])
         machine = machines_values[0]
 
@@ -459,12 +469,14 @@ def find_available_machine(config, container):
 
 
 def find_available_machine_port(config, machine, dest_port):
+    # find containers for a given machine
     containers = {
         c_id: c
         for c_id, c in config['containers'].items()
         if c['machine_id'] == machine['id']
     }
 
+    # map ports used on that machine
     containers_ports_map = {}
 
     for container_id, container in containers.items():
@@ -472,6 +484,7 @@ def find_available_machine_port(config, machine, dest_port):
             c_src_port = int(c_src_port)
             containers_ports_map[c_src_port] = c_dest_port
 
+    # find available port on that machine
     port = dest_port
 
     if port < 10000:
