@@ -872,6 +872,12 @@ def container_remove(remote_uri, project_id, container_id, force=False, verbose=
     containers = config['containers']
     machines = config['machines']
 
+    # make sure user wants to delete container
+    answer = input('Are you sure you want to remove container? [y/n]: ')
+
+    if answer != 'y':
+        sys.exit(-1)
+
     if force:
         # try to remove container on each machine
         for machine_id, machine in machines.items():
