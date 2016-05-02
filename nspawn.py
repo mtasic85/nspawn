@@ -155,7 +155,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     err = stderr.read()
     stdin.close()
 
-    # systemd-networkd.socket
+    # enable systemd-networkd.socket
     s = '/usr/lib/systemd/system/systemd-networkd.socket'
     d = '/etc/systemd/system/sockets.target.wants/systemd-networkd.socket'
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
@@ -165,7 +165,7 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     err = stderr.read()
     stdin.close()
 
-    # systemd-resolved.service
+    # enable systemd-resolved.service
     s = '/usr/lib/systemd/system/systemd-resolved.service'
     d = '/etc/systemd/system/sockets.target.wants/systemd-resolved.service'
     command = 'ln -s "{}{}" "{}{}"'.format(machine_dir, s, machine_dir, d)
