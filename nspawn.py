@@ -318,7 +318,10 @@ def load_remote_config(uri, filename='nspawn.remote.conf'):
     out = stdout.read().decode()
     err = stderr.read().decode()
     stdin.close()    
-    if err: raise IOError(err)
+    
+    if err:
+        if verbose:
+            print('WARNING: {!r}'.format(err))
 
     # close ssh client
     client.close()
@@ -331,12 +334,34 @@ def save_remote_config(uri, config, filename='nspawn.remote.conf'):
     # ssh client
     client = ssh_client(uri)
 
-    _config = shlex.quote(json.dumps(config, indent=True))
+    # load first previous remote config
+    command = 'cat "{}"'.format(filename)
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read().decode()
+    err = stderr.read().decode()
+    stdin.close()
+
+    if err:
+        if verbose:
+            print('WARNING: {!r}'.format(err))
+        
+        prev_config = {}
+    else:
+        prev_config = json.loads(out)
+
+    # merge previous config with current
+    new_config = self.merge_remote_configs([prev_config, config])
+
+    # save remote config
+    _config = shlex.quote(json.dumps(new_config, indent=True))
     command = 'echo {} > "{}"'.format(_config, filename)
     stdin, stdout, stderr = client.exec_command(command)
     err = stderr.read()
     stdin.close()
-    if err: raise IOError(err)
+    
+    if err:
+        if verbose:
+            print('WARNING: {!r}'.format(err))
 
     # close ssh client
     client.close()
