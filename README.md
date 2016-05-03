@@ -77,6 +77,16 @@ $ ssh dcloud@192.168.0.150
 If you could connect to remote server without typing password, everything is good. Otherwise, please check your SSH keys, and try to copy them from local machine to remote server.
 
 
+# Troubleshoot
+
+## Force Reboot Machine
+
+```
+echo 1 > /proc/sys/kernel/sysrq 
+echo b > /proc/sysrq-trigger
+```
+
+
 # TODO
 
 1) SSH root with password
