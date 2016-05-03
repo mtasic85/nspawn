@@ -881,7 +881,7 @@ def container_list(remote_uri, project_id, verbose=False):
     ]
     container_items = sorted(
         container_items,
-        key=lambda n: (n[1]['name'], n[1]['host'], n[1]['ports']),
+        key=lambda n: (n[1]['name'], n[1]['host']),
     )
     
     print('{a: <12} {b: <10} {c: <15} {d: <33} {e: <6}'.format(
