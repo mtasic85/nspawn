@@ -186,7 +186,34 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     stdin.close()
     
     # set locale to utf8
+    f = '#en_US.UTF-8 UTF-8'
+    t = 'en_US.UTF-8 UTF-8'
+    p = '{}/etc/locale.gen'.format(machine_dir)
+    command = 'sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
+    f = '#en_US ISO-8859-1'
+    t = 'en_US ISO-8859-1'
+    p = '{}/etc/locale.gen'.format(machine_dir)
+    command = 'sed -i \'s/{}/{}/g\' "{}"'.format(f, t, p)
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
     command = 'localectl set-locale LANG=en_US.UTF-8'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
+    command = 'locale-gen'
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
