@@ -912,7 +912,7 @@ def container_list(remote_uri, project_id, verbose=False):
         ))
 
 
-def container_add(remote_uri, project_id, name, ports_str, distro, image_id, image, start=False, verbose=False):
+def container_add(remote_uri, project_id, name, ports_str, distro, image_id, image, machine_id=None, start=False, verbose=False):
     if not remote_uri:
         local_config = load_local_config()
         remote_uri = local_config['main']['remote_address']
@@ -924,6 +924,7 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
     remote_user, remote_host, remote_port = parse_uri(remote_uri)
     config = load_consensus_config(remote_uri, verbose=verbose)
     containers = config['containers']
+    machines = config['machines']
 
     # parse ports
     requested_ports = parse_ports(ports_str)
@@ -952,7 +953,11 @@ def container_add(remote_uri, project_id, name, ports_str, distro, image_id, ima
     }
 
     # find suitable machine where to host container
-    machine = find_available_machine(config, container)
+    if machine_id:
+        machine = machines[machine_id]
+    else:
+        machine = find_available_machine(config, container)
+    
     container['machine_id'] = machine['id']
     container['host'] = machine['host']
 
@@ -1208,6 +1213,7 @@ if __name__ == '__main__':
     container_add_parser.add_argument('--distro', '-d', default='arch', help='Linux distribution: arch (UNSUPPORTED but planned: debian, fedora)')
     container_add_parser.add_argument('--image-id', '-I', help='[UNSUPPORTED] Image ID')
     container_add_parser.add_argument('--image', '-i', help='[UNSUPPORTED] Image name')
+    container_add_parser.add_argument('--machine-id', '-M', help='Machine ID where to create container')
     container_add_parser.add_argument('--start', '-s', action='store_true', help='Start container')
     container_add_parser.add_argument('--verbose', '-v', action='store_true', help='Verbose')
 
@@ -1264,6 +1270,7 @@ if __name__ == '__main__':
                 args.distro,
                 args.image_id,
                 args.image,
+                args.machine_id,
                 args.start,
                 args.verbose,
             )
