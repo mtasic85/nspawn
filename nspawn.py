@@ -184,7 +184,15 @@ def create_container_arch_install(uri, container, start=False, verbose=False):
     out = stdout.read()
     err = stderr.read()
     stdin.close()
-
+    
+    # set locale to utf8
+    command = 'localectl set-locale LANG=en_US.UTF-8'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+    
     # patch sshd
     f = '#PermitRootLogin prohibit-password'
     t = 'PermitRootLogin yes'
