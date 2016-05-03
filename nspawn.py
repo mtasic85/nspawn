@@ -1014,26 +1014,14 @@ def container_remove(remote_uri, project_id, container_id, force=False, verbose=
     if force:
         # try to remove container on each machine
         for machine_id, machine in machines.items():
-            uri = '{user}@{host}:{port}'.format(**machine)
-            
             container = {
                 'id': container_id,
                 'project_id': project_id,
                 'machine_id': machine_id,
             }
 
-            # create systemd-nspawn container on machine
             uri = '{user}@{host}:{port}'.format(**machine)
-
-            if container['distro'] == 'arch':
-                if container['image_id']:
-                    raise NotImplementedError
-                elif container['image']:
-                    raise NotImplementedError
-                else:
-                    destroy_container_arch(uri, container, verbose)
-            else:
-                raise NotImplementedError
+            destroy_container_arch(uri, container, verbose)
 
         del containers[container_id]
         save_consensus_config(config, verbose=verbose)
