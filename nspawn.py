@@ -1202,7 +1202,7 @@ if __name__ == '__main__':
     container_parser = parser_subparsers.add_parser('container')
     container_subparsers = container_parser.add_subparsers(dest='container_subparser', metavar='container')
     container_parser.add_argument('--project-id', '-P', help='Project ID')
-    
+
     # container list
     container_list_parser = container_subparsers.add_parser('list', help='List of containers at remote host')
 
