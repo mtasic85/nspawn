@@ -443,8 +443,6 @@ def stop_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # stop service
@@ -453,8 +451,6 @@ def stop_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # disable service
@@ -463,8 +459,6 @@ def stop_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # sync
@@ -486,14 +480,20 @@ def restart_container_arch(uri, container, verbose=False):
     # ssh client
     client = ssh_client(uri)
 
+    # demon-reload
+    command = 'systemctl daemon-reload'
+    if verbose: print('{!r}'.format(command))
+    stdin, stdout, stderr = client.exec_command(command)
+    out = stdout.read()
+    err = stderr.read()
+    stdin.close()
+
     # start service
     command = 'systemctl restart systemd-nspawn@{}.service'.format(container['id'])
     if verbose: print('{!r}'.format(command))
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # enable service
@@ -502,8 +502,6 @@ def restart_container_arch(uri, container, verbose=False):
     stdin, stdout, stderr = client.exec_command(command)
     out = stdout.read()
     err = stderr.read()
-    # if verbose: print('stdout: {!r}'.format(out))
-    # if verbose: print('stderr: {!r}'.format(err))
     stdin.close()
 
     # sync
