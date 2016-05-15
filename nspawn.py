@@ -1091,7 +1091,17 @@ def container_remove(remote_uri, project_id, container_id, force=False, verbose=
         elif container['image']:
             raise NotImplementedError
         else:
-            destroy_container_arch(uri, container, verbose)
+            try:
+                destroy_container_arch(uri, container, verbose)
+            except Exception as e:
+                msg = e
+                print(msg, file=sys.stderr)
+
+                # make sure user wants to delete container
+                answer = input('There was an error, are you sure you want to remove container? [y/n]: ')
+
+                if answer != 'y':
+                    sys.exit(-1)
     else:
         raise NotImplementedError
     
