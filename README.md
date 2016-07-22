@@ -55,23 +55,23 @@ $ ssh-keygen -t rsa
 
 ## Copy local public SSH key to remote server
 
-Next step is to copy local public SSH key to each remote server. Lets say that remote server behind 192.168.0.150 has user "dcloud".
+Next step is to copy local public SSH key to each remote server. Lets say that remote server behind 192.168.0.100 has user "dcloud".
 
 ```
-$ ssh-copy-id dcloud@192.168.0.150
+$ ssh-copy-id dcloud@192.168.0.100
 ```
 
 Or using:
 
 ```
-$ cat ~/.ssh/id_rsa.pub | ssh dcloud@192.168.0.150 'cat >> .ssh/authorized_keys'
+$ cat ~/.ssh/id_rsa.pub | ssh dcloud@192.168.0.100 'cat >> .ssh/authorized_keys'
 ```
 
 ## Test SSH connection from local machine to remote server
 Now, lets test if we can connect without typing password.
 
 ```
-$ ssh dcloud@192.168.0.150
+$ ssh dcloud@192.168.0.100
 ```
 
 If you could connect to remote server without typing password, everything is good. Otherwise, please check your SSH keys, and try to copy them from local machine to remote server.

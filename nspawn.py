@@ -9,6 +9,7 @@ import shlex
 import random
 import hashlib
 import argparse
+import threading
 
 import paramiko
 
@@ -590,6 +591,29 @@ def merge_remote_configs(configs):
 
     return config
 
+def _load_consensus_config_from_machine_thread(lock, configs, machine_uri, verbose=False):
+    try:
+        config = load_remote_config(machine_uri, verbose=verbose)
+    except IOError as e:
+        err = 'ERROR: Could not load remote config from {}'.format(
+            machine_uri,
+        )
+
+        if verbose:
+            print('ERROR: {!r}'.format(e), file=sys.stderr)
+
+        print(err, file=sys.stderr)
+        
+        with lock:
+            answer = input('Skip? [y/n]: ')
+
+        if answer == 'n':
+            sys.exit(-1)
+
+        return
+
+    with lock:
+        configs.append(config)
 
 def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
     # load remote config of boostrap/main node
@@ -603,7 +627,7 @@ def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
     machines = config.get('machines', {})
     configs = []
 
-    for machine_id, machine in machines.items():
+    """for machine_id, machine in machines.items():
         machine_uri = '{user}@{host}:{port}'.format(**machine)
 
         try:
@@ -622,7 +646,25 @@ def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
             if answer == 'n':
                 sys.exit(-1)
 
-        configs.append(config)
+        configs.append(config)"""
+
+    threads = []
+    lock = threading.Lock()
+
+    for machine_id, machine in machines.items():
+        machine_uri = '{user}@{host}:{port}'.format(**machine)
+        
+        t = threading.Thread(
+            target=_load_consensus_config_from_machine_thread,
+            args=(lock, configs, machine_uri),
+            kwargs={'verbose': verbose},
+        )
+
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
     config = merge_remote_configs(configs)
     return config
