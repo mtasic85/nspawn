@@ -591,7 +591,8 @@ def merge_remote_configs(configs):
 
     return config
 
-def _load_consensus_config_from_machine_thread(lock, configs, machine_uri, verbose=False):
+
+def _load_consensus_config_thread(lock, configs, machine_uri, verbose=False):
     try:
         config = load_remote_config(machine_uri, verbose=verbose)
     except IOError as e:
@@ -614,6 +615,7 @@ def _load_consensus_config_from_machine_thread(lock, configs, machine_uri, verbo
 
     with lock:
         configs.append(config)
+
 
 def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
     # load remote config of boostrap/main node
@@ -655,7 +657,7 @@ def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
         machine_uri = '{user}@{host}:{port}'.format(**machine)
         
         t = threading.Thread(
-            target=_load_consensus_config_from_machine_thread,
+            target=_load_consensus_config_thread,
             args=(lock, configs, machine_uri),
             kwargs={'verbose': verbose},
         )
@@ -670,10 +672,30 @@ def load_consensus_config(uri, filename='nspawn.remote.conf', verbose=False):
     return config
 
 
+def _save_consensus_config_thread(lock, config, machine_uri, verbose=False):
+    try:    
+        save_remote_config(machine_uri, config, verbose=verbose)
+    except IOError as e:
+        err = 'ERROR: Could not save remote config on {}'.format(
+            machine_uri,
+        )
+
+        if verbose:
+            print('ERROR: {!r}'.format(e), file=sys.stderr)
+
+        print(err, file=sys.stderr)
+
+        with lock:
+            answer = input('Skip? [y/n]: ')
+
+        if answer == 'n':
+            sys.exit(-1)
+
+
 def save_consensus_config(config, filename='nspawn.remote.conf', verbose=False):
     machines = config.get('machines', {})
     
-    for machine_id, machine in machines.items():
+    """for machine_id, machine in machines.items():
         machine_uri = '{user}@{host}:{port}'.format(**machine)
 
         try:    
@@ -690,7 +712,25 @@ def save_consensus_config(config, filename='nspawn.remote.conf', verbose=False):
             answer = input('Skip? [y/n]: ')
 
             if answer == 'n':
-                sys.exit(-1)
+                sys.exit(-1)"""
+
+    threads = []
+    lock = threading.Lock()
+
+    for machine_id, machine in machines.items():
+        machine_uri = '{user}@{host}:{port}'.format(**machine)
+
+        t = threading.Thread(
+            target=_save_consensus_config_thread,
+            args=(lock, config, machine_uri),
+            kwargs={'verbose': verbose},
+        )
+
+        t.start()
+        threads.append(t)
+
+    for t in threads:
+        t.join()
 
 
 def find_available_machine(config, container):
